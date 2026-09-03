@@ -3,36 +3,28 @@
 namespace saiopt {
 
 namespace {
-// Moves an expression's constant term into the bound, leaving only the
-// variable terms behind -- Constraint stores terms and bounds separately.
-double extract_constant(LinearExpression& expr) {
-    double constant = expr.constant();
-    expr -= constant;
-    return constant;
+
+// lhs - rhs folds every variable term onto one side; the resulting
+// constant is the negation of what belongs on the right-hand side.
+Constraint make_constraint(LinearExpression lhs, ConstraintSense sense, LinearExpression rhs) {
+    LinearExpression diff = std::move(lhs) - std::move(rhs);
+    double rhs_value = -diff.constant();
+    diff -= diff.constant();
+    return Constraint(std::move(diff), sense, rhs_value);
 }
+
 }  // namespace
 
-Constraint operator<=(LinearExpression lhs, double rhs) {
-    double bound = rhs - extract_constant(lhs);
-    return Constraint(std::move(lhs), -kInfinity, bound);
+Constraint operator<=(LinearExpression lhs, LinearExpression rhs) {
+    return make_constraint(std::move(lhs), ConstraintSense::Le, std::move(rhs));
 }
 
-Constraint operator>=(LinearExpression lhs, double rhs) {
-    double bound = rhs - extract_constant(lhs);
-    return Constraint(std::move(lhs), bound, kInfinity);
+Constraint operator>=(LinearExpression lhs, LinearExpression rhs) {
+    return make_constraint(std::move(lhs), ConstraintSense::Ge, std::move(rhs));
 }
 
-Constraint operator==(LinearExpression lhs, double rhs) {
-    double bound = rhs - extract_constant(lhs);
-    return Constraint(std::move(lhs), bound, bound);
-}
-
-Constraint operator<=(double lhs, LinearExpression rhs) {
-    return std::move(rhs) >= lhs;
-}
-
-Constraint operator>=(double lhs, LinearExpression rhs) {
-    return std::move(rhs) <= lhs;
+Constraint operator==(LinearExpression lhs, LinearExpression rhs) {
+    return make_constraint(std::move(lhs), ConstraintSense::Eq, std::move(rhs));
 }
 
 }  // namespace saiopt

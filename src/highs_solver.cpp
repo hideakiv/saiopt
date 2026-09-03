@@ -35,8 +35,8 @@ SolveResult HighsSolver::solve(const Model& model) const {
         lp.col_cost.data(), lp.col_lower.data(), lp.col_upper.data(), lp.row_lower.data(),
         lp.row_upper.data(), a_start.data(), a_index.data(), lp.a_value.data());
 
-    for (std::size_t i = 0; status == 0 && i < model.num_variables(); ++i) {
-        if (model.variable_type(i) != VariableType::Continuous) {
+    for (std::size_t i = 0; status == 0 && i < lp.col_kind.size(); ++i) {
+        if (lp.col_kind[i] != VarKind::Continuous) {
             Highs_changeColIntegrality(highs, static_cast<HighsInt>(i), kHighsVarTypeInteger);
         }
     }
@@ -48,12 +48,16 @@ SolveResult HighsSolver::solve(const Model& model) const {
         HighsInt model_status = Highs_getModelStatus(highs);
         result.optimal = (model_status == kHighsModelStatusOptimal);
 
-        result.variable_values.resize(model.num_variables());
-        std::vector<double> row_value(model.num_constraints());
-        std::vector<double> col_dual(model.num_variables());
-        std::vector<double> row_dual(model.num_constraints());
-        Highs_getSolution(highs, result.variable_values.data(), col_dual.data(),
-                           row_value.data(), row_dual.data());
+        std::vector<double> col_value(lp.num_col);
+        std::vector<double> row_value(lp.num_row);
+        std::vector<double> col_dual(lp.num_col);
+        std::vector<double> row_dual(lp.num_row);
+        Highs_getSolution(highs, col_value.data(), col_dual.data(), row_value.data(),
+                           row_dual.data());
+
+        for (std::size_t i = 0; i < lp.col_variable.size(); ++i) {
+            result.values.emplace(lp.col_variable[i], col_value[i]);
+        }
         result.objective_value = Highs_getObjectiveValue(highs);
     } else {
         result.status_message = "HiGHS rejected the model (Highs_passLp failed)";

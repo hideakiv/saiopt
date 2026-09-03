@@ -1,59 +1,167 @@
 #include "saiopt/sparse_lp.hpp"
 
+#include <functional>
 #include <map>
+#include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #include "saiopt/model.hpp"
 
 namespace saiopt {
 
-SparseLp flatten(const Model& model) {
-    SparseLp lp;
-    lp.num_col = static_cast<std::int64_t>(model.num_variables());
-    lp.num_row = static_cast<std::int64_t>(model.num_constraints());
+// Walks the Block tree, assigning every variable a global column,
+// validating that every constraint/objective only references variables
+// owned by its own block or one of that block's attached descendants, and
+// aggregating each block's objective scaled by the product of multipliers
+// from the root down to it. Mirrors the Rust prototype's flatten.rs.
+class ModelFlattener {
+public:
+    static SparseLp flatten(const Model& model) {
+        if (!model.sense_) {
+            throw std::runtime_error("model has no objective set");
+        }
 
-    lp.col_cost.assign(model.num_variables(), 0.0);
-    for (const auto& [index, coeff] : model.objective().expression.terms()) {
-        lp.col_cost[index] = coeff;
-    }
-    lp.offset = model.objective().expression.constant();
-    lp.sense = model.objective().sense == ObjectiveSense::Maximize ? -1 : 1;
-
-    lp.col_lower.reserve(model.num_variables());
-    lp.col_upper.reserve(model.num_variables());
-    for (std::size_t i = 0; i < model.num_variables(); ++i) {
-        lp.col_lower.push_back(model.variable_lower(i));
-        lp.col_upper.push_back(model.variable_upper(i));
-    }
-
-    lp.row_lower.reserve(model.num_constraints());
-    lp.row_upper.reserve(model.num_constraints());
-    for (std::size_t r = 0; r < model.num_constraints(); ++r) {
-        lp.row_lower.push_back(model.constraint(r).lower());
-        lp.row_upper.push_back(model.constraint(r).upper());
+        ModelFlattener flattener;
+        flattener.collect_vars(model.root_);
+        flattener.collect_constraints_and_objective(model.root_, 1.0);
+        return flattener.build(model);
     }
 
-    // Build the constraint matrix column-by-column (CSC): for each variable,
-    // collect (row, coefficient) pairs from every constraint it appears in.
-    std::vector<std::map<std::int64_t, double>> columns(model.num_variables());
-    for (std::size_t r = 0; r < model.num_constraints(); ++r) {
-        for (const auto& [index, coeff] : model.constraint(r).expression().terms()) {
-            if (coeff != 0.0) {
-                columns[index][static_cast<std::int64_t>(r)] += coeff;
+private:
+    struct FlatConstraint {
+        std::vector<std::pair<std::int64_t, double>> coefficients;
+        ConstraintSense sense;
+        double rhs;
+    };
+
+    std::unordered_set<BlockId> collect_vars(const Block& block) {
+        for (std::size_t i = 0; i < block.vars_.size(); ++i) {
+            Variable variable(block.id_, i);
+            std::int64_t column = static_cast<std::int64_t>(kinds_.size());
+            const auto& vd = block.vars_[i];
+            kinds_.push_back(vd.kind);
+            lowers_.push_back(vd.lower);
+            uppers_.push_back(vd.upper);
+            var_order_.push_back(variable);
+            columns_.emplace(variable, column);
+        }
+
+        std::unordered_set<BlockId> own_scope{block.id_};
+        for (const auto& child : block.children_) {
+            auto child_scope = collect_vars(child.block);
+            own_scope.insert(child_scope.begin(), child_scope.end());
+        }
+        descendants_.emplace(block.id_, own_scope);
+        return own_scope;
+    }
+
+    void collect_constraints_and_objective(const Block& block, double scale) {
+        const auto& own_scope = descendants_.at(block.id_);
+        auto resolve = [&](Variable var) -> std::int64_t {
+            if (!own_scope.count(var.block())) {
+                throw std::runtime_error(
+                    "a block's constraints and objective may only reference variables that "
+                    "belong to the block itself or to one of its attached sub-blocks");
+            }
+            return columns_.at(var);
+        };
+
+        for (const auto& entry : block.constraints_) {
+            const Constraint& c = entry.constraint;
+            FlatConstraint fc;
+            fc.coefficients.reserve(c.expression().terms().size());
+            for (const auto& [var, coeff] : c.expression().terms()) {
+                fc.coefficients.emplace_back(resolve(var), coeff);
+            }
+            fc.sense = c.sense();
+            fc.rhs = c.rhs();
+            constraints_.push_back(std::move(fc));
+        }
+
+        for (const auto& [var, coeff] : block.objective_.terms()) {
+            (void)coeff;
+            resolve(var);
+        }
+        objective_ += block.objective_ * scale;
+
+        for (const auto& child : block.children_) {
+            collect_constraints_and_objective(child.block, scale * child.multiplier);
+        }
+    }
+
+    SparseLp build(const Model& model) const {
+        SparseLp lp;
+        std::size_t num_col = kinds_.size();
+        lp.num_col = static_cast<std::int64_t>(num_col);
+        lp.num_row = static_cast<std::int64_t>(constraints_.size());
+
+        lp.col_cost.assign(num_col, 0.0);
+        for (const auto& [var, coeff] : objective_.terms()) {
+            lp.col_cost[static_cast<std::size_t>(columns_.at(var))] += coeff;
+        }
+        lp.offset = objective_.constant();
+        lp.sense = (*model.sense_ == ObjectiveSense::Maximize) ? -1 : 1;
+
+        lp.col_lower = lowers_;
+        lp.col_upper = uppers_;
+        lp.col_kind = kinds_;
+        lp.col_variable = var_order_;
+
+        lp.row_lower.reserve(constraints_.size());
+        lp.row_upper.reserve(constraints_.size());
+        for (const auto& c : constraints_) {
+            switch (c.sense) {
+                case ConstraintSense::Le:
+                    lp.row_lower.push_back(-kInfinity);
+                    lp.row_upper.push_back(c.rhs);
+                    break;
+                case ConstraintSense::Ge:
+                    lp.row_lower.push_back(c.rhs);
+                    lp.row_upper.push_back(kInfinity);
+                    break;
+                case ConstraintSense::Eq:
+                    lp.row_lower.push_back(c.rhs);
+                    lp.row_upper.push_back(c.rhs);
+                    break;
             }
         }
-    }
 
-    lp.a_start.reserve(model.num_variables() + 1);
-    lp.a_start.push_back(0);
-    for (const auto& column : columns) {
-        for (const auto& [row, coeff] : column) {
-            lp.a_index.push_back(row);
-            lp.a_value.push_back(coeff);
+        // Build the constraint matrix column-by-column (CSC).
+        std::vector<std::map<std::int64_t, double>> columns_by_var(num_col);
+        for (std::size_t r = 0; r < constraints_.size(); ++r) {
+            for (const auto& [col, coeff] : constraints_[r].coefficients) {
+                if (coeff != 0.0) {
+                    columns_by_var[static_cast<std::size_t>(col)][static_cast<std::int64_t>(r)] +=
+                        coeff;
+                }
+            }
         }
-        lp.a_start.push_back(static_cast<std::int64_t>(lp.a_index.size()));
+
+        lp.a_start.reserve(num_col + 1);
+        lp.a_start.push_back(0);
+        for (const auto& column : columns_by_var) {
+            for (const auto& [row, coeff] : column) {
+                lp.a_index.push_back(row);
+                lp.a_value.push_back(coeff);
+            }
+            lp.a_start.push_back(static_cast<std::int64_t>(lp.a_index.size()));
+        }
+
+        return lp;
     }
 
-    return lp;
-}
+    std::unordered_map<Variable, std::int64_t> columns_;
+    std::vector<VarKind> kinds_;
+    std::vector<double> lowers_;
+    std::vector<double> uppers_;
+    std::vector<Variable> var_order_;
+    std::unordered_map<BlockId, std::unordered_set<BlockId>> descendants_;
+    std::vector<FlatConstraint> constraints_;
+    LinearExpression objective_;
+};
+
+SparseLp flatten(const Model& model) { return ModelFlattener::flatten(model); }
 
 }  // namespace saiopt

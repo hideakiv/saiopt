@@ -22,8 +22,10 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(highs)
 
 add_library(saiopt
+  src/variable.cpp
   src/expression.cpp
   src/constraint.cpp
+  src/block.cpp
   src/sparse_lp.cpp
   src/model.cpp
   src/highs_solver.cpp

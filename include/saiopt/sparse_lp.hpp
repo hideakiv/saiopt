@@ -3,13 +3,15 @@
 #include <cstdint>
 #include <vector>
 
+#include "saiopt/variable.hpp"
+
 namespace saiopt {
 
 class Model;
 
-// Column-wise (CSC) sparse representation of a Model's constraint matrix,
-// bounds, and objective -- the exact shape HiGHS' C API expects. Exposed
-// directly so callers can inspect or hand-edit it before solving.
+// Column-wise (CSC) sparse representation of a Model's flattened Block
+// tree -- the exact shape HiGHS' C API expects. Exposed directly so callers
+// can inspect or hand-edit it before solving.
 struct SparseLp {
     std::int64_t num_col = 0;
     std::int64_t num_row = 0;
@@ -22,6 +24,11 @@ struct SparseLp {
     std::vector<double> col_cost;
     std::vector<double> col_lower;
     std::vector<double> col_upper;
+    std::vector<VarKind> col_kind;
+
+    // The Variable each column originated from -- used to map a solution
+    // back onto the original Block tree.
+    std::vector<Variable> col_variable;
 
     std::vector<double> row_lower;
     std::vector<double> row_upper;

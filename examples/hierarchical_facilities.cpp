@@ -27,6 +27,8 @@
 // sibling block up itself -- see examples/indexed_macros.cpp for the same
 // pattern in its simplest possible form).
 
+using namespace saiopt;
+
 namespace {
 
 struct Facility {
@@ -40,11 +42,31 @@ struct Facility {
     double multiplier;
 };
 
+// A facility's own period-by-period production plan: indexed produce
+// variables (via SAIOPT_VARS), a single produce_total variable linked to
+// their sum by an internal constraint, and a local objective over
+// produce_total.
+Block build_facility_block(const Facility& f, const std::vector<int>& period_range) {
+    Block sub;
+
+    SAIOPT_VARS(sub, produce, period_range,
+                ([&](int) { return VariableDef::continuous().upper(f.period_capacity); }));
+    SAIOPT_VAR(sub, produce_total, VariableDef::continuous());
+
+    LinearExpression produce_sum;
+    for (const auto& [period, var] : produce) {
+        (void)period;
+        produce_sum += var;
+    }
+    SAIOPT_CONSTRAINT(sub, produce_total_link, produce_total == produce_sum);
+
+    sub.set_objective(f.production_cost * produce_total);
+    return sub;
+}
+
 }  // namespace
 
 int main() {
-    using namespace saiopt;
-
     const int periods = 3;
     const double demand = 90.0;
     std::vector<Facility> facilities{
@@ -69,25 +91,7 @@ int main() {
 
     SAIOPT_BLOCKS_SCALED(
         model, facility, facility_names,
-        ([&](const std::string& name) {
-            const Facility& f = *by_name.at(name);
-            Block sub;
-
-            SAIOPT_VARS(sub, produce, period_range, ([&](int) {
-                            return VariableDef::continuous().upper(f.period_capacity);
-                        }));
-            SAIOPT_VAR(sub, produce_total, VariableDef::continuous());
-
-            LinearExpression produce_sum;
-            for (const auto& [period, var] : produce) {
-                (void)period;
-                produce_sum += var;
-            }
-            SAIOPT_CONSTRAINT(sub, produce_total_link, produce_total == produce_sum);
-
-            sub.set_objective(f.production_cost * produce_total);
-            return sub;
-        }),
+        ([&](const std::string& name) { return build_facility_block(*by_name.at(name), period_range); }),
         ([&](const std::string& name) { return by_name.at(name)->multiplier; }));
 
     // SAIOPT_BLOCKS_SCALED only hands back one BlockRef per facility -- to

@@ -56,7 +56,7 @@ SolveResult HighsSolver::solve(const Model& model) const {
                            row_dual.data());
 
         for (std::size_t i = 0; i < lp.col_variable.size(); ++i) {
-            result.values.emplace(lp.col_variable[i], col_value[i]);
+            result.variable_values.emplace(lp.col_variable[i], col_value[i]);
         }
         result.objective_value = Highs_getObjectiveValue(highs);
     } else {

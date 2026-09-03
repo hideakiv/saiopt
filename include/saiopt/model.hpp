@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -15,10 +16,21 @@ namespace saiopt {
 struct SolveResult {
     bool optimal = false;
     double objective_value = 0.0;
-    std::unordered_map<Variable, double> values;
+    std::unordered_map<Variable, double> variable_values;
     std::string status_message;
 
-    double value(Variable var) const { return values.at(var); }
+    double value(Variable var) const { return variable_values.at(var); }
+
+    // Look up the solution value for every variable in an Indexed<K,
+    // Variable>, returning them in the same shape.
+    template <typename K>
+    Indexed<K, double> values(const Indexed<K, Variable>& indexed) const {
+        std::map<K, double> map;
+        for (const auto& [k, v] : indexed) {
+            map.emplace(k, value(v));
+        }
+        return Indexed<K, double>::from_map(std::move(map));
+    }
 };
 
 // A mathematical optimization model: the root Block of a tree of
@@ -31,8 +43,18 @@ public:
 
     Variable add_var(VariableDef def) { return root_.add_var(std::move(def)); }
 
+    template <typename Range, typename DefFn>
+    auto add_vars(const Range& index, DefFn&& def) {
+        return root_.add_vars(index, std::forward<DefFn>(def));
+    }
+
     ConstraintRef add_constraint(std::string name, Constraint constraint) {
         return root_.add_constraint(std::move(name), std::move(constraint));
+    }
+
+    template <typename Range, typename Fn>
+    auto add_constraints(std::string name, const Range& index, Fn&& f) {
+        return root_.add_constraints(std::move(name), index, std::forward<Fn>(f));
     }
 
     // Move `child` with a multiplier of 1.0, under `name` so it can later
@@ -46,6 +68,17 @@ public:
     // `multiplier`.
     BlockRef add_block_scaled(std::string name, Block child, double multiplier) {
         return root_.add_block_scaled(std::move(name), std::move(child), multiplier);
+    }
+
+    template <typename Range, typename Fn>
+    auto add_blocks(std::string name, const Range& index, Fn&& f) {
+        return root_.add_blocks(std::move(name), index, std::forward<Fn>(f));
+    }
+
+    template <typename Range, typename Fn, typename MultFn>
+    auto add_blocks_scaled(std::string name, const Range& index, Fn&& f, MultFn&& multiplier) {
+        return root_.add_blocks_scaled(std::move(name), index, std::forward<Fn>(f),
+                                        std::forward<MultFn>(multiplier));
     }
 
     const Block& block(BlockRef ref) const { return root_.block(ref); }

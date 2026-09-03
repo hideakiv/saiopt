@@ -1,14 +1,18 @@
 #pragma once
 
+#include <map>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "saiopt/block_id.hpp"
 #include "saiopt/constraint.hpp"
 #include "saiopt/constraint_ref.hpp"
 #include "saiopt/expression.hpp"
+#include "saiopt/indexed.hpp"
 #include "saiopt/variable.hpp"
 
 namespace saiopt {
@@ -61,7 +65,34 @@ public:
 
     Variable add_var(VariableDef def);
 
+    // Add one variable per item in `index`, built by `def(k)`.
+    template <typename Range, typename DefFn>
+    auto add_vars(const Range& index, DefFn&& def) {
+        using K = std::decay_t<decltype(*std::begin(index))>;
+        std::map<K, Variable> map;
+        for (const auto& k : index) {
+            map.emplace(k, add_var(def(k)));
+        }
+        return Indexed<K, Variable>::from_map(std::move(map));
+    }
+
     ConstraintRef add_constraint(std::string name, Constraint constraint);
+
+    // Add one constraint per item in `index`, built by `f(k)`, each named
+    // `{name}[{k}]`. `name` disambiguates this whole group from any other
+    // add_constraints call in the same block (two calls sharing a prefix
+    // and an overlapping index value would otherwise collide, since every
+    // constraint name must be unique within a block).
+    template <typename Range, typename Fn>
+    auto add_constraints(std::string name, const Range& index, Fn&& f) {
+        using K = std::decay_t<decltype(*std::begin(index))>;
+        std::map<K, ConstraintRef> map;
+        for (const auto& k : index) {
+            ConstraintRef ref = add_constraint(detail::indexed_name(name, k), f(k));
+            map.emplace(k, ref);
+        }
+        return Indexed<K, ConstraintRef>::from_map(std::move(map));
+    }
 
     // Set this block's own local objective contribution. Only meaningful
     // once the block is (transitively) attached to a Model, which combines
@@ -77,6 +108,28 @@ public:
     // Move `child` into this block's tree under `name`; `child`'s own
     // objective is added to this block's total, scaled by `multiplier`.
     BlockRef add_block_scaled(std::string name, Block child, double multiplier);
+
+    // Add one child per item in `index`, built by `f(k)`, each with a
+    // multiplier of 1.0. See add_blocks_scaled.
+    template <typename Range, typename Fn>
+    auto add_blocks(std::string name, const Range& index, Fn&& f) {
+        return add_blocks_scaled(std::move(name), index, std::forward<Fn>(f),
+                                  [](const auto&) { return 1.0; });
+    }
+
+    // Add one child per item in `index`, built by `f(k)` and scaled by
+    // `multiplier(k)`, each named `{name}[{k}]` (see add_constraints for
+    // why the group is named).
+    template <typename Range, typename Fn, typename MultFn>
+    auto add_blocks_scaled(std::string name, const Range& index, Fn&& f, MultFn&& multiplier) {
+        using K = std::decay_t<decltype(*std::begin(index))>;
+        std::map<K, BlockRef> map;
+        for (const auto& k : index) {
+            BlockRef ref = add_block_scaled(detail::indexed_name(name, k), f(k), multiplier(k));
+            map.emplace(k, ref);
+        }
+        return Indexed<K, BlockRef>::from_map(std::move(map));
+    }
 
     const Block& block(BlockRef ref) const;
     Block& block(BlockRef ref);

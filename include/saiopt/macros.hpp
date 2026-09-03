@@ -2,19 +2,17 @@
 
 #include "saiopt/indexed.hpp"
 
-// Convenience macros mirroring saiopt's Rust var!/constraint!/block!
-// declaration macros: derive both a local C++ variable's name and its
-// saiopt lookup name from a single identifier, so a later Model::var /
-// Model::constraint / Model::child lookup doesn't need the name repeated
-// as a separate string literal.
+// Convenience declaration macros: derive both a local C++ variable's name
+// and its saiopt lookup name from a single identifier, so a later
+// Model::var / Model::constraint / Model::child lookup doesn't need the
+// name repeated as a separate string literal.
 //
 //   SAIOPT_VAR(model, x, VariableDef::continuous().upper(4.0));
 //   // expands to: auto x = model.add_var(VariableDef::continuous().upper(4.0).name("x"));
 //
-// Prefixed with SAIOPT_ (rather than bare VAR/CONSTRAINT/BLOCK) since,
-// unlike Rust's namespaced macro_rules!, C++ preprocessor macros are
-// global and unscoped, and those bare names would be too easy to collide
-// with unrelated code.
+// Prefixed with SAIOPT_ (rather than bare VAR/CONSTRAINT/BLOCK) since C++
+// preprocessor macros are global and unscoped, and those bare names would
+// be too easy to collide with unrelated code.
 
 #define SAIOPT_VAR(block, ident, def) [[maybe_unused]] auto ident = (block).add_var((def).name(#ident))
 

@@ -15,7 +15,7 @@ namespace saiopt {
 // validating that every constraint/objective only references variables
 // owned by its own block or one of that block's attached descendants, and
 // aggregating each block's objective scaled by the product of multipliers
-// from the root down to it. Mirrors the Rust prototype's flatten.rs.
+// from the root down to it.
 class ModelFlattener {
 public:
     static SparseLp flatten(const Model& model) {

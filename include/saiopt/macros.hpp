@@ -16,21 +16,21 @@
 // global and unscoped, and those bare names would be too easy to collide
 // with unrelated code.
 
-#define SAIOPT_VAR(block, ident, def) auto ident = (block).add_var((def).name(#ident))
+#define SAIOPT_VAR(block, ident, def) [[maybe_unused]] auto ident = (block).add_var((def).name(#ident))
 
-#define SAIOPT_CONSTRAINT(block, ident, expr) auto ident = (block).add_constraint(#ident, (expr))
+#define SAIOPT_CONSTRAINT(block, ident, expr) [[maybe_unused]] auto ident = (block).add_constraint(#ident, (expr))
 
-#define SAIOPT_BLOCK(block, ident, child) auto ident = (block).add_block(#ident, (child))
+#define SAIOPT_BLOCK(block, ident, child) [[maybe_unused]] auto ident = (block).add_block(#ident, (child))
 
 #define SAIOPT_BLOCK_SCALED(block, ident, child, multiplier) \
-    auto ident = (block).add_block_scaled(#ident, (child), (multiplier))
+    [[maybe_unused]] auto ident = (block).add_block_scaled(#ident, (child), (multiplier))
 
 // The indexed counterpart to SAIOPT_VAR: declare one variable per item of
 // an index, deriving each item's name from the same single identifier.
 // `def` must not already call .name(...) itself -- the macro's own naming
 // always overwrites it, same as SAIOPT_VAR.
 #define SAIOPT_VARS(block, ident, index, def)                                                   \
-    auto ident = (block).add_vars((index), [&](const auto& saiopt_key) {                        \
+    [[maybe_unused]] auto ident = (block).add_vars((index), [&](const auto& saiopt_key) {                        \
         return (def)(saiopt_key).name(::saiopt::detail::indexed_name(#ident, saiopt_key));      \
     })
 
@@ -38,7 +38,7 @@
 // item of an index, deriving the group's name prefix from a single
 // identifier.
 #define SAIOPT_CONSTRAINTS(block, ident, index, f) \
-    auto ident = (block).add_constraints(#ident, (index), (f))
+    [[maybe_unused]] auto ident = (block).add_constraints(#ident, (index), (f))
 
 // The indexed counterpart to SAIOPT_BLOCK / SAIOPT_BLOCK_SCALED: add one
 // child block per item of an index, deriving each item's name from a
@@ -51,7 +51,7 @@
 // some other way, or a fresh model.child(...) lookup once the block is
 // attached.
 #define SAIOPT_BLOCKS(block, ident, index, child) \
-    auto ident = (block).add_blocks(#ident, (index), (child))
+    [[maybe_unused]] auto ident = (block).add_blocks(#ident, (index), (child))
 
 #define SAIOPT_BLOCKS_SCALED(block, ident, index, child, multiplier) \
-    auto ident = (block).add_blocks_scaled(#ident, (index), (child), (multiplier))
+    [[maybe_unused]] auto ident = (block).add_blocks_scaled(#ident, (index), (child), (multiplier))

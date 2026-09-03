@@ -25,20 +25,30 @@ Run an example:
 ./build/examples/diet_problem
 ```
 
+Other examples: `blocks_basics`, `indexed_macros`, `hierarchical_facilities`,
+and `transportation` -- see `examples/` for what each demonstrates.
+
 ## Example
 
+`SAIOPT_VAR`/`SAIOPT_CONSTRAINT` (and their indexed forms `SAIOPT_VARS`/
+`SAIOPT_CONSTRAINTS`, plus `SAIOPT_BLOCK[_SCALED]`/`SAIOPT_BLOCKS[_SCALED]`
+for attaching sub-models) derive both a local C++ variable's name and its
+`saiopt` lookup name from one identifier, so `model.var("bread")` later
+doesn't need `"bread"` repeated as a separate string literal:
+
 ```cpp
+#include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
 
 using namespace saiopt;
 
 Model model;
-Variable bread = model.add_variable("bread");
-Variable milk = model.add_variable("milk");
+SAIOPT_VAR(model, bread, VariableDef::continuous());
+SAIOPT_VAR(model, milk, VariableDef::continuous());
 
-model.set_objective(2.0 * bread + 3.0 * milk, ObjectiveSense::Minimize);
-model.add_constraint(4.0 * bread + 8.0 * milk >= 20.0);
-model.add_constraint(100.0 * bread + 150.0 * milk >= 400.0);
+model.set_objective(ObjectiveSense::Minimize, 2.0 * bread + 3.0 * milk);
+SAIOPT_CONSTRAINT(model, protein, 4.0 * bread + 8.0 * milk >= 20.0);
+SAIOPT_CONSTRAINT(model, calories, 100.0 * bread + 150.0 * milk >= 400.0);
 
 SolveResult result = model.solve();
 ```

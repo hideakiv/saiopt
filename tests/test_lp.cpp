@@ -1,3 +1,5 @@
+#include <cmath>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -68,6 +70,42 @@ TEST_CASE("range constraint via >= chaining and constant folding", "[lp]") {
     REQUIRE(model.constraint_upper(c) == Approx(10.0));
 }
 
+TEST_CASE("duals, reduced costs, and sensitivity ranging on a simple LP", "[lp]") {
+    Model model;
+    Variable x = model.add_var(VariableDef::continuous().bound(0.0, kInfinity));
+    Variable y = model.add_var(VariableDef::continuous().bound(0.0, kInfinity));
+
+    model.set_objective(ObjectiveSense::Minimize, 2.0 * x + 3.0 * y);
+    ConstraintRef total = model.add_constraint("total", x + y >= 10.0);
+
+    SolveResult result = model.solve();
+    REQUIRE(result.optimal);
+    REQUIRE(result.value(x) == Approx(10.0));
+    REQUIRE(result.value(y) == Approx(0.0));
+
+    // The binding constraint's shadow price: relaxing it by one unit lets
+    // x (the cheaper variable) absorb the slack, raising the objective by
+    // its coefficient.
+    REQUIRE(result.dual(total) == Approx(2.0));
+
+    // x is basic (nonzero) at the optimum, so its reduced cost is 0; y is
+    // pinned to its lower bound, and costs 1 more per unit than routing
+    // that unit through x via the constraint (3 - 2*1).
+    REQUIRE(result.reduced_cost(x) == Approx(0.0));
+    REQUIRE(result.reduced_cost(y) == Approx(1.0));
+
+    // x's cost can range up to 3 (where it ties with y) before the basis
+    // would switch; y's cost can drop to 2 for the same reason, with no
+    // upper limit since y is already at 0.
+    SensitivityRange x_cost = result.objective_coefficient_range(x);
+    REQUIRE(x_cost.lower == Approx(0.0));
+    REQUIRE(x_cost.upper == Approx(3.0));
+
+    SensitivityRange y_cost = result.objective_coefficient_range(y);
+    REQUIRE(y_cost.lower == Approx(2.0));
+    REQUIRE(std::isinf(y_cost.upper));
+}
+
 TEST_CASE("respects integrality on integer variables", "[milp]") {
     Model model;
     Variable x = model.add_var(VariableDef::integer());
@@ -79,4 +117,14 @@ TEST_CASE("respects integrality on integer variables", "[milp]") {
 
     REQUIRE(result.optimal);
     REQUIRE(result.value(x) == Approx(3.0));
+
+    // HiGHS zeroes out duals/reduced costs for a MILP rather than giving
+    // the final LP relaxation's values, and Highs_getRanging fails
+    // outright -- leave these unpublished rather than surface the zeros
+    // as if they meant something.
+    REQUIRE(result.reduced_costs.empty());
+    REQUIRE(result.duals.empty());
+    REQUIRE(result.objective_coefficient_ranges.empty());
+    REQUIRE(result.variable_bound_ranges.empty());
+    REQUIRE(result.constraint_bound_ranges.empty());
 }

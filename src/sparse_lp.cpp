@@ -34,6 +34,7 @@ private:
         std::vector<std::pair<std::int64_t, double>> coefficients;
         double lower;
         double upper;
+        ConstraintRef ref;
     };
 
     std::unordered_set<BlockId> collect_vars(const Block& block) {
@@ -68,15 +69,13 @@ private:
             return columns_.at(var);
         };
 
-        for (const auto& entry : block.constraints_) {
-            const Constraint& c = entry.constraint;
-            FlatConstraint fc;
+        for (std::size_t i = 0; i < block.constraints_.size(); ++i) {
+            const Constraint& c = block.constraints_[i].constraint;
+            FlatConstraint fc{{}, c.lower(), c.upper(), ConstraintRef(block.id_, i)};
             fc.coefficients.reserve(c.expression().terms().size());
             for (const auto& [var, coeff] : c.expression().terms()) {
                 fc.coefficients.emplace_back(resolve(var), coeff);
             }
-            fc.lower = c.lower();
-            fc.upper = c.upper();
             constraints_.push_back(std::move(fc));
         }
 
@@ -111,9 +110,11 @@ private:
 
         lp.row_lower.reserve(constraints_.size());
         lp.row_upper.reserve(constraints_.size());
+        lp.row_constraint.reserve(constraints_.size());
         for (const auto& c : constraints_) {
             lp.row_lower.push_back(c.lower);
             lp.row_upper.push_back(c.upper);
+            lp.row_constraint.push_back(c.ref);
         }
 
         // Build the constraint matrix column-by-column (CSC).

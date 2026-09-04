@@ -2,6 +2,7 @@
 
 #include <interfaces/highs_c_api.h>
 
+#include <algorithm>
 #include <vector>
 
 #include "saiopt/sparse_lp.hpp"
@@ -16,6 +17,11 @@ std::vector<HighsInt> to_highs_int(const std::vector<std::int64_t>& values) {
         result[i] = static_cast<HighsInt>(values[i]);
     }
     return result;
+}
+
+bool is_pure_lp(const SparseLp& lp) {
+    return std::all_of(lp.col_kind.begin(), lp.col_kind.end(),
+                        [](VarKind kind) { return kind == VarKind::Continuous; });
 }
 
 }  // namespace
@@ -59,6 +65,45 @@ SolveResult HighsSolver::solve(const Model& model) const {
             result.variable_values.emplace(lp.col_variable[i], col_value[i]);
         }
         result.objective_value = Highs_getObjectiveValue(highs);
+
+        // HiGHS only produces meaningful duals/reduced costs/ranging for an
+        // LP basis: for a model with any integer/binary column, the dual
+        // arrays from Highs_getSolution come back all zero (not the final
+        // LP relaxation's values) and Highs_getRanging fails outright, so
+        // leave these unset rather than publish misleading zeros.
+        if (result.optimal && is_pure_lp(lp)) {
+            for (std::size_t i = 0; i < lp.col_variable.size(); ++i) {
+                result.reduced_costs.emplace(lp.col_variable[i], col_dual[i]);
+            }
+            for (std::size_t i = 0; i < lp.row_constraint.size(); ++i) {
+                result.duals.emplace(lp.row_constraint[i], row_dual[i]);
+            }
+            std::vector<double> col_cost_up(lp.num_col);
+            std::vector<double> col_cost_dn(lp.num_col);
+            std::vector<double> col_bound_up(lp.num_col);
+            std::vector<double> col_bound_dn(lp.num_col);
+            std::vector<double> row_bound_up(lp.num_row);
+            std::vector<double> row_bound_dn(lp.num_row);
+
+            HighsInt ranging_status = Highs_getRanging(
+                highs, col_cost_up.data(), nullptr, nullptr, nullptr, col_cost_dn.data(), nullptr,
+                nullptr, nullptr, col_bound_up.data(), nullptr, nullptr, nullptr,
+                col_bound_dn.data(), nullptr, nullptr, nullptr, row_bound_up.data(), nullptr,
+                nullptr, nullptr, row_bound_dn.data(), nullptr, nullptr, nullptr);
+
+            if (ranging_status == kHighsStatusOk) {
+                for (std::size_t i = 0; i < lp.col_variable.size(); ++i) {
+                    result.objective_coefficient_ranges.emplace(
+                        lp.col_variable[i], SensitivityRange{col_cost_dn[i], col_cost_up[i]});
+                    result.variable_bound_ranges.emplace(
+                        lp.col_variable[i], SensitivityRange{col_bound_dn[i], col_bound_up[i]});
+                }
+                for (std::size_t i = 0; i < lp.row_constraint.size(); ++i) {
+                    result.constraint_bound_ranges.emplace(
+                        lp.row_constraint[i], SensitivityRange{row_bound_dn[i], row_bound_up[i]});
+                }
+            }
+        }
     } else {
         result.status_message = "HiGHS rejected the model (Highs_passLp failed)";
     }

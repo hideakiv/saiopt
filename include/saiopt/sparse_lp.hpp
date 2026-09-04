@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "saiopt/constraint_ref.hpp"
 #include "saiopt/variable.hpp"
 
 namespace saiopt {
@@ -32,6 +33,10 @@ struct SparseLp {
 
     std::vector<double> row_lower;
     std::vector<double> row_upper;
+
+    // The ConstraintRef each row originated from -- used to map dual
+    // values and bound ranging back onto the original Block tree.
+    std::vector<ConstraintRef> row_constraint;
 
     // HiGHS objective sense: +1 minimize, -1 maximize.
     int sense = 1;

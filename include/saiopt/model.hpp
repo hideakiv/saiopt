@@ -11,16 +11,60 @@
 
 namespace saiopt {
 
+// A closed sensitivity range: how far a cost coefficient or a bound can
+// move, holding everything else fixed, while the solved basis stays
+// optimal.
+struct SensitivityRange {
+    double lower = 0.0;
+    double upper = 0.0;
+};
+
 // The primal solution to a solved Model: whether it's optimal, the
 // objective value, and the value assigned to every variable across the
-// whole Block tree.
+// whole Block tree. Also carries the LP sensitivity information HiGHS
+// computes alongside the solution -- duals, reduced costs, and ranging --
+// which only exist for an LP basis: if the model has any integer/binary
+// variable, these maps are left empty rather than published with the
+// zeroed-out values HiGHS returns for a MILP.
 struct SolveResult {
     bool optimal = false;
     double objective_value = 0.0;
     std::unordered_map<Variable, double> variable_values;
     std::string status_message;
 
+    // Reduced cost of each variable: how much the objective would change
+    // per unit increase in that variable's bound, at the margin.
+    std::unordered_map<Variable, double> reduced_costs;
+
+    // Dual (shadow price) of each constraint: how much the objective would
+    // change per unit relaxation of that constraint's binding bound.
+    std::unordered_map<ConstraintRef, double> duals;
+
+    // Range each variable's objective coefficient can move within while
+    // the solved basis stays optimal.
+    std::unordered_map<Variable, SensitivityRange> objective_coefficient_ranges;
+
+    // Range each variable's own bound can move within while the solved
+    // basis stays optimal.
+    std::unordered_map<Variable, SensitivityRange> variable_bound_ranges;
+
+    // Range each constraint's binding bound can move within while the
+    // solved basis stays optimal.
+    std::unordered_map<ConstraintRef, SensitivityRange> constraint_bound_ranges;
+
     double value(Variable var) const { return variable_values.at(var); }
+    double reduced_cost(Variable var) const { return reduced_costs.at(var); }
+    double dual(ConstraintRef cref) const { return duals.at(cref); }
+
+    const SensitivityRange& objective_coefficient_range(Variable var) const {
+        return objective_coefficient_ranges.at(var);
+    }
+    const SensitivityRange& variable_bound_range(Variable var) const {
+        return variable_bound_ranges.at(var);
+    }
+    const SensitivityRange& constraint_bound_range(ConstraintRef cref) const {
+        return constraint_bound_ranges.at(cref);
+    }
 
     // Look up the solution value for every variable in an Indexed<K,
     // Variable>, returning them in the same shape.

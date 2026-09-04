@@ -32,7 +32,7 @@ int main() {
 
     SAIOPT_BLOCKS(model, region, regions, ([](const std::string&) {
                       Block child;
-                      SAIOPT_VAR(child, y, VariableDef::continuous().upper(10.0));
+                      SAIOPT_VAR(child, y, VariableDef::continuous().bound(0.0, 10.0));
                       return child;
                   }));
 

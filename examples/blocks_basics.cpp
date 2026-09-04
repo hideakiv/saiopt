@@ -23,7 +23,7 @@ int main() {
     SAIOPT_VAR(model, x, VariableDef::continuous());
 
     Block child;
-    SAIOPT_VAR(child, y, VariableDef::continuous());
+    SAIOPT_VAR(child, y, VariableDef::continuous().bound(0.0, kInfinity));
     SAIOPT_CONSTRAINT(child, y_upper, y <= 4.0);
     child.set_objective(2.0 * y);
     SAIOPT_BLOCK_SCALED(model, sub, std::move(child), 3.0);

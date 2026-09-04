@@ -125,16 +125,28 @@ void Block::set_constraint_coefficient(ConstraintRef cref, Variable var, double 
     owner->constraints_.at(cref.index()).constraint.set_coefficient(var, coeff);
 }
 
-double Block::constraint_rhs(ConstraintRef cref) const {
+double Block::constraint_lower(ConstraintRef cref) const {
     const Block* owner = find(cref.block());
     if (!owner) throw std::runtime_error("constraint does not belong to this block's subtree");
-    return owner->constraints_.at(cref.index()).constraint.rhs();
+    return owner->constraints_.at(cref.index()).constraint.lower();
 }
 
-void Block::set_constraint_rhs(ConstraintRef cref, double rhs) {
+void Block::set_constraint_lower(ConstraintRef cref, double lower) {
     Block* owner = find(cref.block());
     if (!owner) throw std::runtime_error("constraint does not belong to this block's subtree");
-    owner->constraints_.at(cref.index()).constraint.set_rhs(rhs);
+    owner->constraints_.at(cref.index()).constraint.set_lower(lower);
+}
+
+double Block::constraint_upper(ConstraintRef cref) const {
+    const Block* owner = find(cref.block());
+    if (!owner) throw std::runtime_error("constraint does not belong to this block's subtree");
+    return owner->constraints_.at(cref.index()).constraint.upper();
+}
+
+void Block::set_constraint_upper(ConstraintRef cref, double upper) {
+    Block* owner = find(cref.block());
+    if (!owner) throw std::runtime_error("constraint does not belong to this block's subtree");
+    owner->constraints_.at(cref.index()).constraint.set_upper(upper);
 }
 
 }  // namespace saiopt

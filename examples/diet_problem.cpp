@@ -52,7 +52,7 @@ int main() {
     Model model;
 
     SAIOPT_VARS(model, x, food_names, ([&](const std::string& name) {
-                    return VariableDef::continuous().upper(by_name.at(name)->max_units);
+                    return VariableDef::continuous().bound(0.0, by_name.at(name)->max_units);
                 }));
 
     LinearExpression calories_total;

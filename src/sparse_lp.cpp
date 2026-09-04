@@ -32,8 +32,8 @@ public:
 private:
     struct FlatConstraint {
         std::vector<std::pair<std::int64_t, double>> coefficients;
-        ConstraintSense sense;
-        double rhs;
+        double lower;
+        double upper;
     };
 
     std::unordered_set<BlockId> collect_vars(const Block& block) {
@@ -75,8 +75,8 @@ private:
             for (const auto& [var, coeff] : c.expression().terms()) {
                 fc.coefficients.emplace_back(resolve(var), coeff);
             }
-            fc.sense = c.sense();
-            fc.rhs = c.rhs();
+            fc.lower = c.lower();
+            fc.upper = c.upper();
             constraints_.push_back(std::move(fc));
         }
 
@@ -112,20 +112,8 @@ private:
         lp.row_lower.reserve(constraints_.size());
         lp.row_upper.reserve(constraints_.size());
         for (const auto& c : constraints_) {
-            switch (c.sense) {
-                case ConstraintSense::Le:
-                    lp.row_lower.push_back(-kInfinity);
-                    lp.row_upper.push_back(c.rhs);
-                    break;
-                case ConstraintSense::Ge:
-                    lp.row_lower.push_back(c.rhs);
-                    lp.row_upper.push_back(kInfinity);
-                    break;
-                case ConstraintSense::Eq:
-                    lp.row_lower.push_back(c.rhs);
-                    lp.row_upper.push_back(c.rhs);
-                    break;
-            }
+            lp.row_lower.push_back(c.lower);
+            lp.row_upper.push_back(c.upper);
         }
 
         // Build the constraint matrix column-by-column (CSC).

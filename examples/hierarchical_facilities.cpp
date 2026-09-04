@@ -50,7 +50,7 @@ Block build_facility_block(const Facility& f, const std::vector<int>& period_ran
     Block sub;
 
     SAIOPT_VARS(sub, produce, period_range,
-                ([&](int) { return VariableDef::continuous().upper(f.period_capacity); }));
+                ([&](int) { return VariableDef::continuous().bound(0.0, f.period_capacity); }));
     SAIOPT_VAR(sub, produce_total, VariableDef::continuous());
 
     LinearExpression produce_sum;

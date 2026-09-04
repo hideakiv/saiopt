@@ -13,14 +13,14 @@ using Catch::Approx;
 
 TEST_CASE("SAIOPT_VAR declares a named local bound to the same lookup name", "[macros]") {
     Model model;
-    SAIOPT_VAR(model, x, VariableDef::continuous().upper(4.0));
+    SAIOPT_VAR(model, x, VariableDef::continuous().bound(0.0, 4.0));
 
     REQUIRE(model.var("x") == x);
 }
 
 TEST_CASE("SAIOPT_CONSTRAINT declares a named local bound to the same lookup name", "[macros]") {
     Model model;
-    SAIOPT_VAR(model, x, VariableDef::continuous().upper(4.0));
+    SAIOPT_VAR(model, x, VariableDef::continuous().bound(0.0, 4.0));
     SAIOPT_CONSTRAINT(model, cap, x <= 4.0);
 
     REQUIRE(model.constraint("cap") == cap);
@@ -82,7 +82,7 @@ TEST_CASE("Set::cross builds two-dimensional indices for indexed vars", "[macros
 TEST_CASE("indexed vars solve and their values can be looked up in bulk", "[macros]") {
     Model model;
     std::vector<std::string> items{"a", "b"};
-    SAIOPT_VARS(model, x, items, ([](const std::string&) { return VariableDef::continuous().upper(5.0); }));
+    SAIOPT_VARS(model, x, items, ([](const std::string&) { return VariableDef::continuous().bound(0.0, 5.0); }));
     SAIOPT_CONSTRAINTS(model, cap, items, ([&](const std::string& k) { return x[k] <= 5.0; }));
 
     LinearExpression total;

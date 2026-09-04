@@ -169,11 +169,17 @@ public:
     // Set the coefficient of `var` in the constraint referenced by `cref`.
     void set_constraint_coefficient(ConstraintRef cref, Variable var, double coeff);
 
-    // Right-hand side of the constraint referenced by `cref`.
-    double constraint_rhs(ConstraintRef cref) const;
+    // Lower bound of the constraint referenced by `cref`.
+    double constraint_lower(ConstraintRef cref) const;
 
-    // Set the right-hand side of the constraint referenced by `cref`.
-    void set_constraint_rhs(ConstraintRef cref, double rhs);
+    // Set the lower bound of the constraint referenced by `cref`.
+    void set_constraint_lower(ConstraintRef cref, double lower);
+
+    // Upper bound of the constraint referenced by `cref`.
+    double constraint_upper(ConstraintRef cref) const;
+
+    // Set the upper bound of the constraint referenced by `cref`.
+    void set_constraint_upper(ConstraintRef cref, double upper);
 
 private:
     friend class Model;

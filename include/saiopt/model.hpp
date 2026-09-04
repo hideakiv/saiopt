@@ -131,8 +131,15 @@ public:
         root_.set_constraint_coefficient(cref, var, coeff);
     }
 
-    double constraint_rhs(ConstraintRef cref) const { return root_.constraint_rhs(cref); }
-    void set_constraint_rhs(ConstraintRef cref, double rhs) { root_.set_constraint_rhs(cref, rhs); }
+    double constraint_lower(ConstraintRef cref) const { return root_.constraint_lower(cref); }
+    void set_constraint_lower(ConstraintRef cref, double lower) {
+        root_.set_constraint_lower(cref, lower);
+    }
+
+    double constraint_upper(ConstraintRef cref) const { return root_.constraint_upper(cref); }
+    void set_constraint_upper(ConstraintRef cref, double upper) {
+        root_.set_constraint_upper(cref, upper);
+    }
 
     SolveResult solve() const;
 

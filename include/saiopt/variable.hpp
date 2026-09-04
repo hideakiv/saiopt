@@ -38,24 +38,25 @@ private:
 
 // Fluent builder describing a variable to add to a Block/Model.
 //
-// The default (from VariableDef::continuous()) is a continuous variable
-// bounded to [0, +inf), matching common LP/solver convention. Use
-// VariableDef::free() for an unbounded (-inf, +inf) variable.
+// The default (from VariableDef::continuous() / VariableDef::integer()) is
+// unbounded, ranging over (-inf, +inf). Use .bound(lower, upper) to
+// restrict it -- e.g. .bound(0.0, kInfinity) for the classic LP
+// nonnegativity convention. VariableDef::binary() is the one exception,
+// always bounded to [0, 1].
 class VariableDef {
 public:
     static VariableDef continuous();
     static VariableDef integer();
     static VariableDef binary();
 
-    VariableDef& lower(double value) {
-        lower_ = value;
+    // Set both bounds at once: `lower <= var <= upper`.
+    VariableDef& bound(double lower, double upper) {
+        lower_ = lower;
+        upper_ = upper;
         return *this;
     }
-    VariableDef& upper(double value) {
-        upper_ = value;
-        return *this;
-    }
-    // Remove both bounds, making the variable range over (-inf, +inf).
+    // Remove both bounds, making the variable range over (-inf, +inf) --
+    // already the default; useful to undo an earlier .bound() call.
     VariableDef& free() {
         lower_ = -kInfinity;
         upper_ = kInfinity;
@@ -70,7 +71,7 @@ private:
     friend class Block;
 
     VarKind kind_ = VarKind::Continuous;
-    double lower_ = 0.0;
+    double lower_ = -kInfinity;
     double upper_ = kInfinity;
     std::optional<std::string> name_;
 };

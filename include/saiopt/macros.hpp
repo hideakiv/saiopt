@@ -7,8 +7,8 @@
 // Model::var / Model::constraint / Model::child lookup doesn't need the
 // name repeated as a separate string literal.
 //
-//   SAIOPT_VAR(model, x, VariableDef::continuous().upper(4.0));
-//   // expands to: auto x = model.add_var(VariableDef::continuous().upper(4.0).name("x"));
+//   SAIOPT_VAR(model, x, VariableDef::continuous().bound(0.0, 4.0));
+//   // expands to: auto x = model.add_var(VariableDef::continuous().bound(0.0, 4.0).name("x"));
 //
 // Prefixed with SAIOPT_ (rather than bare VAR/CONSTRAINT/BLOCK) since C++
 // preprocessor macros are global and unscoped, and those bare names would

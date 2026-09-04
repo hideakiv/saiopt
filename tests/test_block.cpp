@@ -13,12 +13,12 @@ TEST_CASE("nested blocks aggregate scaled objectives", "[block]") {
     Model model;
 
     Block widgets;
-    Variable x = widgets.add_var(VariableDef::continuous().upper(10.0).name("x"));
+    Variable x = widgets.add_var(VariableDef::continuous().bound(0.0, 10.0).name("x"));
     widgets.set_objective(5.0 * x);
     widgets.add_constraint("cap", x <= 10.0);
 
     Block gadgets;
-    Variable y = gadgets.add_var(VariableDef::continuous().upper(4.0).name("y"));
+    Variable y = gadgets.add_var(VariableDef::continuous().bound(0.0, 4.0).name("y"));
     gadgets.set_objective(3.0 * y);
     gadgets.add_constraint("cap", y <= 4.0);
 

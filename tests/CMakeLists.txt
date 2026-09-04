@@ -7,7 +7,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(Catch2)
 
-add_executable(saiopt_tests test_lp.cpp test_block.cpp test_macros.cpp)
+add_executable(saiopt_tests test_lp.cpp test_block.cpp test_macros.cpp test_serialize.cpp)
 target_link_libraries(saiopt_tests PRIVATE saiopt Catch2::Catch2WithMain)
 
 list(APPEND CMAKE_MODULE_PATH "${catch2_SOURCE_DIR}/extras")

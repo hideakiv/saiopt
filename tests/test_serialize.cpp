@@ -1,0 +1,103 @@
+#include <stdexcept>
+#include <utility>
+
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+
+#include "saiopt/macros.hpp"
+#include "saiopt/model.hpp"
+
+using namespace saiopt;
+using Catch::Approx;
+
+TEST_CASE("a flat block round-trips through serialize/deserialize", "[serialize]") {
+    Block block;
+    SAIOPT_VAR(block, x, VariableDef::continuous().bound(0.0, 6.0));
+    SAIOPT_VAR(block, y, VariableDef::continuous().bound(0.0, kInfinity));
+    SAIOPT_CONSTRAINT(block, total, x + y >= 5.0);
+    block.set_objective(2.0 * x + 3.0 * y);
+
+    Block rebuilt = Block::deserialize(block.serialize());
+
+    Model model;
+    model.set_objective(ObjectiveSense::Minimize, LinearExpression{});
+    model.add_block("sub", std::move(rebuilt));
+
+    const Block* sub = model.child("sub");
+    REQUIRE(sub != nullptr);
+    REQUIRE(sub->var("x").has_value());
+    REQUIRE(sub->var("y").has_value());
+    ConstraintRef total_ref = *sub->constraint("total");
+    REQUIRE(sub->constraint_lower(total_ref) == Approx(5.0));
+    REQUIRE(sub->objective_coefficient_local(*sub->var("x")) == Approx(2.0));
+    REQUIRE(sub->objective_coefficient_local(*sub->var("y")) == Approx(3.0));
+}
+
+TEST_CASE("nested blocks with cross-block references round-trip and still solve", "[serialize]") {
+    Block child;
+    Variable y = child.add_var(VariableDef::continuous().bound(0.0, 4.0).name("y"));
+    child.add_constraint("y_upper", y <= 4.0);
+    child.set_objective(2.0 * y);
+
+    Block root;
+    Variable x = root.add_var(VariableDef::continuous().bound(0.0, kInfinity).name("x"));
+    root.add_block_scaled("sub", std::move(child), 3.0);
+    // A parent constraint referencing the (already-built) child's variable.
+    root.add_constraint("min_total", x + y >= 5.0);
+    root.set_objective(x);
+
+    Block rebuilt = Block::deserialize(root.serialize());
+
+    Model model;
+    model.set_objective(ObjectiveSense::Minimize, LinearExpression{});
+    model.add_block("root", std::move(rebuilt));
+
+    const Block* rebuilt_root = model.child("root");
+    REQUIRE(rebuilt_root != nullptr);
+    const Block* rebuilt_sub = rebuilt_root->child("sub");
+    REQUIRE(rebuilt_sub != nullptr);
+
+    Variable new_x = *rebuilt_root->var("x");
+    Variable new_y = *rebuilt_sub->var("y");
+    ConstraintRef new_min_total = *rebuilt_root->constraint("min_total");
+
+    // The reconstructed constraint must reference the *new* handles, not
+    // the original ones from before serialization.
+    REQUIRE(rebuilt_root->constraint_coefficient(new_min_total, new_x) == Approx(1.0));
+    REQUIRE(rebuilt_root->constraint_coefficient(new_min_total, new_y) == Approx(1.0));
+    REQUIRE(rebuilt_root->objective_coefficient(new_y) == Approx(6.0));  // 2.0 * multiplier 3.0
+
+    SolveResult result = model.solve();
+    REQUIRE(result.optimal);
+    REQUIRE(result.objective_value == Approx(5.0));
+}
+
+TEST_CASE("an unnamed variable round-trips without a name", "[serialize]") {
+    Block block;
+    Variable v = block.add_var(VariableDef::continuous().bound(0.0, 1.0));
+    block.set_objective(v);
+
+    Block rebuilt = Block::deserialize(block.serialize());
+    REQUIRE_FALSE(rebuilt.var("v").has_value());
+}
+
+TEST_CASE("deserialize rejects a truncated buffer", "[serialize]") {
+    Block block;
+    SAIOPT_VAR(block, x, VariableDef::continuous());
+    block.set_objective(x);
+
+    std::vector<std::byte> bytes = block.serialize();
+    bytes.resize(bytes.size() / 2);
+
+    REQUIRE_THROWS_AS(Block::deserialize(bytes), std::runtime_error);
+}
+
+TEST_CASE("serialize rejects a constraint referencing an out-of-subtree variable", "[serialize]") {
+    Model model;
+    Variable r = model.add_var(VariableDef::continuous());
+
+    Block child;
+    child.add_constraint("bad", r <= 5.0);
+
+    REQUIRE_THROWS_AS(child.serialize(), std::runtime_error);
+}

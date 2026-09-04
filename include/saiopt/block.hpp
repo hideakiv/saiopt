@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <string>
@@ -181,6 +183,22 @@ public:
     // Set the upper bound of the constraint referenced by `cref`.
     void set_constraint_upper(ConstraintRef cref, double upper);
 
+    // Serialize this block's whole structure -- variables, constraints,
+    // objective, and attached children, recursively, all with their names
+    // -- to a flat byte buffer. Meant for handing to another process (e.g.
+    // over MPI, see saiopt/mpi.hpp) and reconstructing there with
+    // Block::deserialize.
+    std::vector<std::byte> serialize() const;
+
+    // Reconstruct a Block from a buffer produced by serialize(), which may
+    // have come from a different process. Rebuilds via the ordinary public
+    // API (add_var/add_constraint/set_objective/add_block_scaled) rather
+    // than copying raw state, so the result is assigned fresh, locally-
+    // unique BlockIds -- safe even if the sending process's BlockId values
+    // happen to collide with ones already in use here. Throws
+    // std::runtime_error if `bytes` is truncated or malformed.
+    static Block deserialize(const std::vector<std::byte>& bytes);
+
 private:
     friend class Model;
     friend class ModelFlattener;
@@ -199,6 +217,17 @@ private:
     // subtree, including itself.
     const Block* find(BlockId id) const;
     Block* find(BlockId id);
+
+    // Path (as a sequence of child indices, walked from `block` down) to
+    // the descendant (or `block` itself, with an empty path) that owns
+    // `var`, appended onto `path`. Returns false, leaving `path`
+    // unmodified, if `var` isn't found in `block`'s own subtree.
+    static bool find_var_path(const Block& block, Variable var, std::vector<std::uint64_t>& path);
+
+    // Appends `block`'s wire encoding (see serialize()) onto `out`.
+    static void write_block(std::vector<std::byte>& out, const Block& block);
+    static void write_expression(std::vector<std::byte>& out, const Block& block,
+                                  const LinearExpression& expr);
 
     // Product of multipliers from this block down to the descendant (or
     // self) with the given id, if it's found in this block's own subtree.

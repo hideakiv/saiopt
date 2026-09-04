@@ -41,6 +41,15 @@ target_link_libraries(saiopt PUBLIC highs)
 
 option(SAIOPT_BUILD_EXAMPLES "Build saiopt examples" ON)
 option(SAIOPT_BUILD_TESTS "Build saiopt tests" ON)
+option(SAIOPT_WITH_MPI "Build saiopt_mpi, for sending Blocks between processes over MPI" ON)
+
+if(SAIOPT_WITH_MPI)
+  find_package(MPI REQUIRED COMPONENTS CXX)
+  add_library(saiopt_mpi
+    src/mpi.cpp
+  )
+  target_link_libraries(saiopt_mpi PUBLIC saiopt MPI::MPI_CXX)
+endif()
 
 if(SAIOPT_BUILD_EXAMPLES)
   add_subdirectory(examples)

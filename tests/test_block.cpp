@@ -1,4 +1,6 @@
+#include <sstream>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 #include <catch2/catch_approx.hpp>
@@ -55,6 +57,29 @@ TEST_CASE("duplicate constraint name in a block throws", "[block]") {
     Variable x = model.add_var(VariableDef::continuous());
     model.add_constraint("cap", x <= 5.0);
     REQUIRE_THROWS_AS(model.add_constraint("cap", x <= 5.0), std::runtime_error);
+}
+
+TEST_CASE("print labels nested-block variables by their qualified path", "[block]") {
+    Model model;
+    Variable x = model.add_var(VariableDef::continuous().bound(0.0, kInfinity).name("x"));
+
+    Block child;
+    Variable y = child.add_var(VariableDef::continuous().bound(0.0, 4.0).name("y"));
+    child.add_constraint("y_upper", y <= 4.0);
+    child.set_objective(2.0 * y);
+    model.add_block_scaled("sub", std::move(child), 3.0);
+
+    model.add_constraint("min_total", x + y >= 5.0);
+    model.set_objective(ObjectiveSense::Minimize, x);
+
+    std::ostringstream out;
+    model.print(out);
+    std::string text = out.str();
+
+    REQUIRE(text.find("model (minimize)") != std::string::npos);
+    REQUIRE(text.find("min_total: sub.y + x >= 5") != std::string::npos);
+    REQUIRE(text.find("block sub (*3):") != std::string::npos);
+    REQUIRE(text.find("y_upper: sub.y <= 4") != std::string::npos);
 }
 
 TEST_CASE("a block cannot reference an ancestor's variable", "[block]") {

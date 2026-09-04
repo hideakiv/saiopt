@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iosfwd>
 #include <map>
 #include <optional>
 #include <string>
@@ -143,8 +144,24 @@ public:
 
     SolveResult solve() const;
 
+    // Print a human-readable summary of the model to `os`: its objective
+    // sense, and every block's own objective contribution, variables, and
+    // constraints, with child blocks indented under their parent. A
+    // variable's label is its own name if it has one (qualified by its
+    // block's path, e.g. "sub.y" for a name set inside a block added under
+    // "sub"), or "#<index>" if unnamed.
+    void print(std::ostream& os) const;
+
+    // Convenience overload, printing to std::cout.
+    void print() const;
+
 private:
     friend class ModelFlattener;
+
+    static void collect_labels(const Block& block, const std::string& prefix,
+                                std::unordered_map<Variable, std::string>& labels);
+    static void print_block(std::ostream& os, const Block& block,
+                             const std::unordered_map<Variable, std::string>& labels, int depth);
 
     Block root_;
     std::optional<ObjectiveSense> sense_;

@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <utility>
 
+#include "saiopt/highs_solver.hpp"
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
 
@@ -31,7 +32,7 @@ int main() {
     SAIOPT_CONSTRAINT(model, min_total, x + y >= 5.0);
     model.set_objective(ObjectiveSense::Minimize, x);
 
-    SolveResult result = model.solve();
+    SolveResult result = model.solve(HighsSolver{});
 
     std::printf("minimum total cost = %.2f\n", result.objective_value);
     std::printf("  x = %.2f\n", result.value(x));

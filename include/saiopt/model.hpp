@@ -11,6 +11,8 @@
 
 namespace saiopt {
 
+class Solver;
+
 // A closed sensitivity range: how far a cost coefficient or a bound can
 // move, holding everything else fixed, while the solved basis stays
 // optimal.
@@ -80,8 +82,9 @@ struct SolveResult {
 
 // A mathematical optimization model: the root Block of a tree of
 // variables, linear constraints, and objective contributions, built up
-// with ordinary C++ arithmetic and then solved via HiGHS. Model is the
-// only place a Block tree can be solved from.
+// with ordinary C++ arithmetic and solved by handing it to any Solver
+// backend. Model is the only place a Block tree can be solved from, and
+// carries no dependency on any particular solver.
 class Model {
 public:
     Model() = default;
@@ -186,7 +189,8 @@ public:
         root_.set_constraint_upper(cref, upper);
     }
 
-    SolveResult solve() const;
+    // Solve this model with the given backend, e.g. model.solve(HighsSolver{}).
+    SolveResult solve(const Solver& solver) const;
 
     // Print a human-readable summary of the model to `os`: its objective
     // sense, and every block's own objective contribution, variables, and

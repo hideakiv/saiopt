@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "saiopt/highs_solver.hpp"
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
 #include "saiopt/set.hpp"
@@ -116,7 +117,7 @@ int main() {
     for (const auto& f : facilities) fixed_cost_total += f.fixed_cost * open[f.name];
     model.set_objective(ObjectiveSense::Minimize, fixed_cost_total);
 
-    SolveResult result = model.solve();
+    SolveResult result = model.solve(HighsSolver{});
 
     std::printf("minimum total cost = %.2f\n", result.objective_value);
     for (const auto& f : facilities) {

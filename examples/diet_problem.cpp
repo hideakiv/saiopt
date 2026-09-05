@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "saiopt/highs_solver.hpp"
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
 #include "saiopt/set.hpp"
@@ -75,7 +76,7 @@ int main() {
     }
     model.set_objective(ObjectiveSense::Minimize, total_cost);
 
-    SolveResult result = model.solve();
+    SolveResult result = model.solve(HighsSolver{});
 
     std::printf("minimum cost = %.2f\n", result.objective_value);
     std::vector<std::string> sorted_names = names;

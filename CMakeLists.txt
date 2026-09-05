@@ -11,16 +11,9 @@ endif()
 
 include(FetchContent)
 
-set(FAST_BUILD ON CACHE BOOL "" FORCE)
-set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(
-  highs
-  GIT_REPOSITORY https://github.com/ERGO-Code/HiGHS.git
-  GIT_TAG v1.15.1
-  GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(highs)
-
+# The core library is solver-agnostic: it only depends on the abstract
+# Solver interface (include/saiopt/solver.hpp), never on a concrete
+# backend such as HiGHS.
 add_library(saiopt
   src/variable.cpp
   src/expression.cpp
@@ -28,20 +21,38 @@ add_library(saiopt
   src/block.cpp
   src/sparse_lp.cpp
   src/model.cpp
-  src/highs_solver.cpp
 )
 target_include_directories(saiopt
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  PRIVATE
-    ${highs_SOURCE_DIR}/highs
-    ${highs_BINARY_DIR}
 )
-target_link_libraries(saiopt PUBLIC highs)
 
 option(SAIOPT_BUILD_EXAMPLES "Build saiopt examples" ON)
 option(SAIOPT_BUILD_TESTS "Build saiopt tests" ON)
 option(SAIOPT_WITH_MPI "Build saiopt_mpi, for sending Blocks between processes over MPI" ON)
+option(SAIOPT_WITH_HIGHS "Build saiopt_highs, a Solver backend implemented with HiGHS" ON)
+
+if(SAIOPT_WITH_HIGHS)
+  set(FAST_BUILD ON CACHE BOOL "" FORCE)
+  set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+  FetchContent_Declare(
+    highs
+    GIT_REPOSITORY https://github.com/ERGO-Code/HiGHS.git
+    GIT_TAG v1.15.1
+    GIT_SHALLOW TRUE
+  )
+  FetchContent_MakeAvailable(highs)
+
+  add_library(saiopt_highs
+    src/highs_solver.cpp
+  )
+  target_include_directories(saiopt_highs
+    PRIVATE
+      ${highs_SOURCE_DIR}/highs
+      ${highs_BINARY_DIR}
+  )
+  target_link_libraries(saiopt_highs PUBLIC saiopt PRIVATE highs)
+endif()
 
 if(SAIOPT_WITH_MPI)
   find_package(MPI REQUIRED COMPONENTS CXX)

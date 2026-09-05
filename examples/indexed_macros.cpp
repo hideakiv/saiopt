@@ -2,6 +2,7 @@
 #include <map>
 #include <string>
 
+#include "saiopt/highs_solver.hpp"
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
 #include "saiopt/set.hpp"
@@ -58,7 +59,7 @@ int main() {
     for (const auto& name : regions) total_open += open[name];
     model.set_objective(ObjectiveSense::Minimize, total_open);
 
-    SolveResult result = model.solve();
+    SolveResult result = model.solve(HighsSolver{});
 
     std::printf("regions opened = %.0f\n", result.objective_value);
     for (const auto& name : regions) {

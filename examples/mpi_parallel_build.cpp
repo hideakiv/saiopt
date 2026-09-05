@@ -4,6 +4,7 @@
 
 #include <mpi.h>
 
+#include "saiopt/highs_solver.hpp"
 #include "saiopt/mpi.hpp"
 #include "saiopt/model.hpp"
 
@@ -57,7 +58,7 @@ int main(int argc, char** argv) {
         model.add_constraint("meet_demand", total_production >= demand);
         model.set_objective(ObjectiveSense::Minimize, LinearExpression{});
 
-        SolveResult result = model.solve();
+        SolveResult result = model.solve(HighsSolver{});
         if (!result.optimal) {
             std::printf("built from %d ranks: infeasible (not enough total capacity for demand %.2f)\n",
                         size, demand);

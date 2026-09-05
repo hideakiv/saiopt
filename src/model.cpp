@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <vector>
 
-#include "saiopt/highs_solver.hpp"
+#include "saiopt/solver.hpp"
 
 namespace saiopt {
 
@@ -125,7 +125,7 @@ void Model::set_objective_coefficient_local(Variable var, double coeff) {
     owner->set_objective_coefficient_local(var, coeff);
 }
 
-SolveResult Model::solve() const { return HighsSolver{}.solve(*this); }
+SolveResult Model::solve(const Solver& solver) const { return solver.solve(*this); }
 
 void Model::collect_labels(const Block& block, const std::string& prefix,
                             std::unordered_map<Variable, std::string>& labels) {

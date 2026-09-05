@@ -11,8 +11,9 @@ namespace saiopt {
 class Model;
 
 // Column-wise (CSC) sparse representation of a Model's flattened Block
-// tree -- the exact shape HiGHS' C API expects. Exposed directly so callers
-// can inspect or hand-edit it before solving.
+// tree -- a common shape for LP/MILP solver APIs (e.g. HiGHS' C API) to
+// consume directly. Exposed so a Solver backend, or a caller, can inspect
+// or hand-edit it before solving.
 struct SparseLp {
     std::int64_t num_col = 0;
     std::int64_t num_row = 0;

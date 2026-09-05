@@ -3,6 +3,7 @@
 #include <string>
 #include <utility>
 
+#include "saiopt/highs_solver.hpp"
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
 #include "saiopt/set.hpp"
@@ -52,7 +53,7 @@ int main() {
     }
     model.set_objective(ObjectiveSense::Minimize, total_cost);
 
-    SolveResult result = model.solve();
+    SolveResult result = model.solve(HighsSolver{});
 
     std::printf("minimum shipping cost = %.2f\n", result.objective_value);
     for (const auto& [w, c] : routes) {

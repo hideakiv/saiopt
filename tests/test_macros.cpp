@@ -4,6 +4,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "saiopt/highs_solver.hpp"
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
 #include "saiopt/set.hpp"
@@ -92,7 +93,7 @@ TEST_CASE("indexed vars solve and their values can be looked up in bulk", "[macr
     }
     model.set_objective(ObjectiveSense::Maximize, total);
 
-    SolveResult result = model.solve();
+    SolveResult result = model.solve(HighsSolver{});
     REQUIRE(result.optimal);
 
     Indexed<std::string, double> values = result.values(x);

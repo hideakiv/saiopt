@@ -1,10 +1,10 @@
 #include <cstdio>
 #include <map>
 #include <string>
+#include <vector>
 
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
-#include "saiopt/set.hpp"
 #include "saiopt/solver.hpp"
 
 // A small model shaped to use every indexed macro together: SAIOPT_VARS for
@@ -25,7 +25,7 @@
 int main() {
     using namespace saiopt;
 
-    Set<std::string> regions{"north", "south", "east"};
+    std::vector<std::string> regions{"north", "south", "east"};
 
     Model model;
 

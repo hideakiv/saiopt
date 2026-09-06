@@ -5,6 +5,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <utility>
 
 #include "saiopt/constraint_ref.hpp"
@@ -17,8 +18,8 @@ namespace saiopt {
 // / Block::add_blocks[_scaled] (and their Model-level mirrors).
 //
 // Backed by std::map (ordered, requiring K to support operator<) rather
-// than an unordered_map, so multi-dimensional keys built with Set::cross
-// (std::pair) work without requiring a std::hash specialization.
+// than an unordered_map, so multi-dimensional keys built with cross()
+// (std::tuple) work without requiring a std::hash specialization.
 template <typename K, typename V>
 class Indexed {
 public:
@@ -51,12 +52,20 @@ using IndexedVar = Indexed<K, Variable>;
 template <typename K>
 using IndexedConstraint = Indexed<K, ConstraintRef>;
 
-// Lets a Set::cross() pair be formatted into a name, e.g. "region[(a, b)]".
-// Declared here (before detail::indexed_name below) so ordinary unqualified
-// lookup finds it at that template's point of definition.
-template <typename T, typename U>
-std::ostream& operator<<(std::ostream& os, const std::pair<T, U>& p) {
-    return os << "(" << p.first << ", " << p.second << ")";
+// Lets a cross()-built tuple key be formatted into a name, e.g.
+// "region[(a, b, c)]". Declared here (before detail::indexed_name below)
+// so ordinary unqualified lookup finds it at that template's point of
+// definition.
+template <typename... Ts>
+std::ostream& operator<<(std::ostream& os, const std::tuple<Ts...>& t) {
+    os << "(";
+    std::apply(
+        [&os](const auto&... elems) {
+            std::size_t i = 0;
+            ((os << elems << (++i < sizeof...(Ts) ? ", " : "")), ...);
+        },
+        t);
+    return os << ")";
 }
 
 namespace detail {

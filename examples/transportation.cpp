@@ -2,23 +2,24 @@
 #include <map>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "saiopt/cross.hpp"
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
-#include "saiopt/set.hpp"
 #include "saiopt/solver.hpp"
 
 // A classic 2-index transportation problem: ship goods from warehouses to
 // customers at minimum cost, respecting warehouse supply limits and
-// customer demand. Demonstrates Set::cross for multi-dimensional
+// customer demand. Demonstrates cross() for multi-dimensional
 // (warehouse, customer) indices, and SAIOPT_VARS/SAIOPT_CONSTRAINTS -- the
 // indexed counterparts of SAIOPT_VAR/SAIOPT_CONSTRAINT -- for declaring x
 // and both constraint groups.
 int main() {
     using namespace saiopt;
 
-    Set<std::string> warehouses{"W1", "W2"};
-    Set<std::string> customers{"C1", "C2", "C3"};
+    std::vector<std::string> warehouses{"W1", "W2"};
+    std::vector<std::string> customers{"C1", "C2", "C3"};
 
     std::map<std::string, double> supply{{"W1", 20.0}, {"W2", 30.0}};
     std::map<std::string, double> demand{{"C1", 15.0}, {"C2", 20.0}, {"C3", 15.0}};
@@ -29,7 +30,7 @@ int main() {
 
     Model model;
 
-    Set<std::pair<std::string, std::string>> routes = warehouses.cross(customers);
+    auto routes = cross(warehouses, customers);
     SAIOPT_VARS(model, x, routes,
                 ([](const auto&) { return VariableDef::continuous().bound(0.0, kInfinity); }));
 

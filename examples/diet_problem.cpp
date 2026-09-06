@@ -6,14 +6,13 @@
 
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
-#include "saiopt/set.hpp"
 #include "saiopt/solver.hpp"
 
 // The classic "diet problem": choose how many units of each food to buy to
 // minimize cost while meeting minimum calorie and protein requirements and
 // staying under a fat limit, with a purchase cap on every food. Demonstrates
-// Set, indexed vars with per-index bounds via SAIOPT_VARS, and
-// SAIOPT_CONSTRAINT for the three single, statically-named constraints.
+// indexed vars with per-index bounds via SAIOPT_VARS, and SAIOPT_CONSTRAINT
+// for the three single, statically-named constraints.
 
 namespace {
 
@@ -48,18 +47,17 @@ int main() {
         names.push_back(f.name);
         by_name[f.name] = &f;
     }
-    Set<std::string> food_names(names);
 
     Model model;
 
-    SAIOPT_VARS(model, x, food_names, ([&](const std::string& name) {
+    SAIOPT_VARS(model, x, names, ([&](const std::string& name) {
                     return VariableDef::continuous().bound(0.0, by_name.at(name)->max_units);
                 }));
 
     LinearExpression calories_total;
     LinearExpression protein_total;
     LinearExpression fat_total;
-    for (const auto& name : food_names) {
+    for (const auto& name : names) {
         const Food& f = *by_name.at(name);
         calories_total += f.calories * x[name];
         protein_total += f.protein * x[name];
@@ -71,7 +69,7 @@ int main() {
     SAIOPT_CONSTRAINT(model, fat_max, fat_total <= max_fat);
 
     LinearExpression total_cost;
-    for (const auto& name : food_names) {
+    for (const auto& name : names) {
         total_cost += by_name.at(name)->cost * x[name];
     }
     SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, total_cost);

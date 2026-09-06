@@ -4,9 +4,9 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "saiopt/cross.hpp"
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
-#include "saiopt/set.hpp"
 #include "saiopt/solver.hpp"
 
 using namespace saiopt;
@@ -67,17 +67,34 @@ TEST_CASE("SAIOPT_BLOCKS_SCALED attaches one child per index item, named by pref
     REQUIRE(model.child("region[2]") != nullptr);
 }
 
-TEST_CASE("Set::cross builds two-dimensional indices for indexed vars", "[macros]") {
+TEST_CASE("cross() builds flat multi-dimensional indices for indexed vars", "[macros]") {
     Model model;
-    Set<std::string> plants{"p1", "p2"};
-    Set<std::string> markets{"m1"};
-    Set<std::pair<std::string, std::string>> routes = plants.cross(markets);
+    std::vector<std::string> plants{"p1", "p2"};
+    std::vector<std::string> markets{"m1"};
+    auto routes = cross(plants, markets);
 
     SAIOPT_VARS(model, ship, routes, ([](const auto&) { return VariableDef::continuous(); }));
 
     REQUIRE(ship.size() == 2);
     REQUIRE(model.var("ship[(p1, m1)]").has_value());
     REQUIRE(model.var("ship[(p2, m1)]").has_value());
+}
+
+TEST_CASE("cross() stays flat past two ranges", "[macros]") {
+    Model model;
+    std::vector<std::string> plants{"p1", "p2"};
+    std::vector<std::string> markets{"m1"};
+    std::vector<int> periods{1, 2};
+    auto route_periods = cross(plants, markets, periods);
+
+    SAIOPT_VARS(model, ship, route_periods, ([](const auto&) { return VariableDef::continuous(); }));
+
+    // A flat std::tuple<std::string, std::string, int>, not
+    // std::tuple<std::tuple<std::string, std::string>, int> -- so the
+    // subscript and derived name are both flat, at any arity.
+    REQUIRE(ship.size() == 4);
+    Variable v = ship[{"p1", "m1", 2}];
+    REQUIRE(model.var("ship[(p1, m1, 2)]") == v);
 }
 
 TEST_CASE("indexed vars solve and their values can be looked up in bulk", "[macros]") {

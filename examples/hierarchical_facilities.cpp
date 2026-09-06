@@ -6,12 +6,11 @@
 
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
-#include "saiopt/set.hpp"
 #include "saiopt/solver.hpp"
 
 // A small facility-location model built out of Blocks: the root Model
 // decides which facilities to open (one indexed open[f] variable per
-// facility, via SAIOPT_VARS over a Set of facility names), while each
+// facility, via SAIOPT_VARS over a list of facility names), while each
 // facility's own period-by-period production plan is a standalone Block.
 //
 // Every facility's block has the same shape: indexed produce variables (via
@@ -81,17 +80,16 @@ int main() {
         names.push_back(f.name);
         by_name[f.name] = &f;
     }
-    Set<std::string> facility_names(names);
 
     std::vector<int> period_range(periods);
     std::iota(period_range.begin(), period_range.end(), 0);
 
     Model model;
-    SAIOPT_VARS(model, open, facility_names,
+    SAIOPT_VARS(model, open, names,
                 ([](const std::string&) { return VariableDef::binary(); }));
 
     SAIOPT_BLOCKS_SCALED(
-        model, facility, facility_names,
+        model, facility, names,
         ([&](const std::string& name) { return build_facility_block(*by_name.at(name), period_range); }),
         ([&](const std::string& name) { return by_name.at(name)->multiplier; }));
 
@@ -99,18 +97,18 @@ int main() {
     // reference each facility's own produce_total in a root constraint,
     // look it back up by name now that every block is attached.
     std::map<std::string, Variable> produce_total_of;
-    for (const auto& name : facility_names) {
+    for (const auto& name : names) {
         Block* fb = model.child("facility[" + name + "]");
         produce_total_of.emplace(name, *fb->var("produce_total"));
     }
 
-    SAIOPT_CONSTRAINTS(model, capacity, facility_names, ([&](const std::string& name) {
+    SAIOPT_CONSTRAINTS(model, capacity, names, ([&](const std::string& name) {
                             return produce_total_of.at(name) <=
                                    by_name.at(name)->total_capacity * open[name];
                         }));
 
     LinearExpression total_production;
-    for (const auto& name : facility_names) total_production += produce_total_of.at(name);
+    for (const auto& name : names) total_production += produce_total_of.at(name);
     SAIOPT_CONSTRAINT(model, meet_demand, total_production >= demand);
 
     LinearExpression fixed_cost_total;

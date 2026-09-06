@@ -1,5 +1,5 @@
 #include <cstdio>
-#include <string>
+#include <numeric>
 #include <vector>
 
 #include <mpi.h>
@@ -45,13 +45,17 @@ int main(int argc, char** argv) {
             regions.push_back(mpi::recv_block(source, build_tag));
         }
 
+        std::vector<std::size_t> region_indices(regions.size());
+        std::iota(region_indices.begin(), region_indices.end(), 0);
+
         Model model;
+        SAIOPT_BLOCKS(model, attached, region_indices,
+                      ([&](std::size_t i) { return std::move(regions[i]); }));
+
         std::vector<Variable> produce_of;
         produce_of.reserve(regions.size());
         for (std::size_t i = 0; i < regions.size(); ++i) {
-            std::string name = "region" + std::to_string(i);
-            model.add_block(name, std::move(regions[i]));
-            produce_of.push_back(*model.child(name)->var("produce"));
+            produce_of.push_back(*model.block(attached[i]).var("produce"));
         }
 
         LinearExpression total_production;

@@ -79,9 +79,70 @@ TEST_CASE("print labels nested-block variables by their qualified path", "[block
     std::string text = out.str();
 
     REQUIRE(text.find("model (minimize)") != std::string::npos);
+    REQUIRE(text.find("objective: x + 3 * (2 sub.y)") != std::string::npos);
     REQUIRE(text.find("min_total: sub.y + x >= 5") != std::string::npos);
-    REQUIRE(text.find("block sub (*3):") != std::string::npos);
+    REQUIRE(text.find("block sub:") != std::string::npos);
     REQUIRE(text.find("y_upper: sub.y <= 4") != std::string::npos);
+}
+
+TEST_CASE("print folds nested objectives with the right sign and multiplier", "[block]") {
+    auto objective_line = [](const Model& model) {
+        std::ostringstream out;
+        model.print(out);
+        std::string text = out.str();
+        auto start = text.find("objective: ");
+        auto end = text.find('\n', start);
+        return text.substr(start, end - start);
+    };
+
+    SECTION("a multiplier of exactly 1 gets no numeric prefix") {
+        Model model;
+        Variable x = model.add_var(VariableDef::continuous().name("x"));
+        Block child;
+        Variable y = child.add_var(VariableDef::continuous().name("y"));
+        child.set_objective(y);
+        model.add_block_scaled("sub", std::move(child), 1.0);
+        model.set_objective(ObjectiveSense::Minimize, x);
+
+        REQUIRE(objective_line(model) == "objective: x + (sub.y)");
+    }
+
+    SECTION("a negative multiplier subtracts instead of adding") {
+        Model model;
+        Variable x = model.add_var(VariableDef::continuous().name("x"));
+        Block child;
+        Variable y = child.add_var(VariableDef::continuous().name("y"));
+        child.set_objective(y);
+        model.add_block_scaled("sub", std::move(child), -2.0);
+        model.set_objective(ObjectiveSense::Minimize, x);
+
+        REQUIRE(objective_line(model) == "objective: x - 2 * (sub.y)");
+    }
+
+    SECTION("an empty intermediate block contributes no stray term") {
+        Model model;
+        Variable x = model.add_var(VariableDef::continuous().name("x"));
+
+        Block grandchild;
+        Variable z = grandchild.add_var(VariableDef::continuous().name("z"));
+        grandchild.set_objective(z);
+
+        Block child;  // no local objective, no own variables
+        child.add_block_scaled("gc", std::move(grandchild), 5.0);
+
+        model.add_block_scaled("sub", std::move(child), 2.0);
+        model.set_objective(ObjectiveSense::Minimize, x);
+
+        REQUIRE(objective_line(model) == "objective: x + 2 * (5 * (sub.gc.z))");
+    }
+
+    SECTION("no objective anywhere falls back to 0") {
+        Model model;
+        model.add_var(VariableDef::continuous().name("x"));
+        model.set_objective(ObjectiveSense::Minimize, LinearExpression{});
+
+        REQUIRE(objective_line(model) == "objective: 0");
+    }
 }
 
 TEST_CASE("a block cannot reference an ancestor's variable", "[block]") {

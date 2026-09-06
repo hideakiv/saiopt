@@ -152,11 +152,15 @@ public:
     }
 
     // Print a human-readable summary of the model to `os`: its objective
-    // sense, and every block's own objective contribution, variables, and
-    // constraints, with child blocks indented under their parent. A
-    // variable's label is its own name if it has one (qualified by its
-    // block's path, e.g. "sub.y" for a name set inside a block added under
-    // "sub"), or "#<index>" if unnamed.
+    // sense, the effective total objective (every block's own
+    // contribution, folded together and scaled by the multiplier it was
+    // attached with, e.g. "x + 3 * (2 sub.y)" for a block "sub" attached
+    // with add_block_scaled(..., 3.0) -- this is what the solver actually
+    // sees, not each block's own unscaled local objective), and every
+    // block's variables and constraints, with child blocks indented under
+    // their parent. A variable's label is its own name if it has one
+    // (qualified by its block's path, e.g. "sub.y" for a name set inside
+    // a block added under "sub"), or "#<index>" if unnamed.
     void print(std::ostream& os) const;
 
     // Convenience overload, printing to std::cout.
@@ -169,6 +173,14 @@ private:
                                 std::unordered_map<Variable, std::string>& labels);
     static void print_block(std::ostream& os, const Block& block,
                              const std::unordered_map<Variable, std::string>& labels, int depth);
+
+    // The effective total objective contributed by `block` and its whole
+    // subtree: `block`'s own local objective, plus each child's own
+    // result of this same call, wrapped in parentheses and prefixed by
+    // its multiplier when that isn't 1 -- see print()'s doc comment for
+    // the exact shape.
+    static std::string format_total_objective(const Block& block,
+                                               const std::unordered_map<Variable, std::string>& labels);
 
     Block root_;
     std::optional<ObjectiveSense> sense_;

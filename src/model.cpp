@@ -92,6 +92,32 @@ std::string format_constraint(const Constraint& c,
     return expr;
 }
 
+// A signed term of the effective total objective: `text` is a single
+// block's own local objective, or a whole already-joined child
+// subtree's contribution wrapped/scaled to reflect its multiplier.
+struct ObjectiveTerm {
+    std::string text;  // magnitude only, no leading sign
+    bool negative;
+};
+
+// Joins signed terms into one "a - b + c" string, the same way
+// format_expression joins a LinearExpression's own terms.
+std::string join_objective_terms(const std::vector<ObjectiveTerm>& terms) {
+    if (terms.empty()) return "0";
+    std::ostringstream oss;
+    bool first = true;
+    for (const auto& term : terms) {
+        if (first) {
+            if (term.negative) oss << "-";
+        } else {
+            oss << (term.negative ? " - " : " + ");
+        }
+        oss << term.text;
+        first = false;
+    }
+    return oss.str();
+}
+
 }  // namespace
 
 void Model::collect_labels(const Block& block, const std::string& prefix,
@@ -105,13 +131,28 @@ void Model::collect_labels(const Block& block, const std::string& prefix,
     }
 }
 
+std::string Model::format_total_objective(const Block& block,
+                                           const std::unordered_map<Variable, std::string>& labels) {
+    std::vector<ObjectiveTerm> terms;
+    if (!block.objective_.terms().empty() || block.objective_.constant() != 0.0) {
+        terms.push_back({format_expression(block.objective_, labels), false});
+    }
+    for (const auto& child : block.children_) {
+        std::string child_total = format_total_objective(child.block, labels);
+        if (child_total == "0") continue;
+
+        double magnitude = std::abs(child.multiplier);
+        std::ostringstream term;
+        if (magnitude != 1.0) term << magnitude << " * ";
+        term << "(" << child_total << ")";
+        terms.push_back({term.str(), child.multiplier < 0.0});
+    }
+    return join_objective_terms(terms);
+}
+
 void Model::print_block(std::ostream& os, const Block& block,
                          const std::unordered_map<Variable, std::string>& labels, int depth) {
     std::string ind(static_cast<std::size_t>(depth) * 2, ' ');
-
-    if (!block.objective_.terms().empty() || block.objective_.constant() != 0.0) {
-        os << ind << "objective: " << format_expression(block.objective_, labels) << "\n";
-    }
 
     if (!block.vars_.empty()) {
         std::vector<std::string> names(block.vars_.size());
@@ -145,7 +186,7 @@ void Model::print_block(std::ostream& os, const Block& block,
 
         for (std::size_t i = 0; i < block.children_.size(); ++i) {
             const ChildBlock& cb = block.children_[i];
-            os << ind << "block " << names[i] << " (*" << cb.multiplier << "):\n";
+            os << ind << "block " << names[i] << ":\n";
             print_block(os, cb.block, labels, depth + 1);
         }
     }
@@ -159,6 +200,7 @@ void Model::print(std::ostream& os) const {
        << (sense_ ? (*sense_ == ObjectiveSense::Minimize ? "minimize" : "maximize")
                   : "no objective")
        << ")\n";
+    os << "objective: " << format_total_objective(root_, labels) << "\n";
     print_block(os, root_, labels, 0);
 }
 

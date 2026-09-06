@@ -4,6 +4,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "saiopt/constraint_ref.hpp"
@@ -60,6 +61,32 @@ private:
     std::map<std::string, std::string> string_options_;
 };
 
+// A snapshot of solver progress, reported periodically during solve()
+// via Solver::set_progress_callback. `iterations` means whatever the
+// current solve phase counts -- simplex or IPM iterations for an LP,
+// total node-LP iterations for a MIP search. The MIP-only fields are
+// unset (rather than a misleading 0) outside a MIP search.
+struct SolverProgress {
+    double elapsed_seconds = 0.0;
+    std::int64_t iterations = 0;
+    double objective_value = 0.0;
+
+    std::optional<double> best_bound;        // MIP only
+    std::optional<double> gap;               // MIP only
+    std::optional<std::int64_t> node_count;  // MIP only
+};
+
+// Returning false requests the solve stop early (an interrupt) at the
+// next opportunity the backend checks for one; the resulting SolveResult
+// then reports non-optimal. Not every backend can honor an interrupt at
+// every point it reports progress -- see the concrete backend.
+//
+// After an interrupted solve, calling solve() again on the *same*
+// Solver is not guaranteed to behave like a fresh attempt -- see the
+// concrete backend for what it actually does. Build a new Solver (via
+// create_solver) for a clean re-attempt.
+using ProgressCallback = std::function<bool(const SolverProgress&)>;
+
 // A solver instance bound to one Model. Constructing a concrete
 // implementation (e.g. HighsSolver) translates that Model into the
 // backend's native form once; solve() can then be called repeatedly
@@ -104,6 +131,12 @@ public:
     // Continuous/integer/binary kind of `var`.
     virtual VarKind variable_kind(Variable var) const = 0;
     virtual void set_variable_kind(Variable var, VarKind kind) = 0;
+
+    // Registers `callback` to run periodically during solve() (and every
+    // subsequent solve() on this Solver, until changed); pass {} to
+    // clear it. Backends differ in exactly how often this fires -- see
+    // the concrete backend.
+    virtual void set_progress_callback(ProgressCallback callback) = 0;
 };
 
 // A backend's constructor, wrapped so it can be looked up by name. See

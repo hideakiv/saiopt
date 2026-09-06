@@ -61,6 +61,27 @@ public:
     VarKind variable_kind(Variable var) const override;
     void set_variable_kind(Variable var, VarKind kind) override;
 
+    // Fires from HiGHS' simplex, IPM, and MIP branch-and-bound progress
+    // events (the *Interrupt-flavored ones, since those are the only
+    // ones that can actually honor an interrupt request). Once solve()
+    // has been interrupted this way, HiGHS leaves this instance's model
+    // status stuck reporting the interrupt on every subsequent solve()
+    // -- neither clearing the callback nor HiGHS' own solver/model reset
+    // calls have been found to un-stick it; build a new Solver via
+    // create_solver for a clean re-attempt.
+    void set_progress_callback(ProgressCallback callback) override;
+
+    // Called by the HiGHS callback trampoline (src/highs_solver.cpp) --
+    // not part of the Solver interface, and not meant to be called
+    // directly, but the trampoline is a free function (its signature is
+    // dictated by HiGHS' C callback type) rather than a member, so this
+    // has to be public rather than a friend without leaking HiGHS'
+    // callback struct types into this header. Returns false if
+    // progress_callback_ (when set) requested the solve stop early --
+    // the trampoline is what actually acts on that by setting HiGHS' own
+    // interrupt flag.
+    bool invoke_progress_callback(const SolverProgress& progress) const;
+
 private:
     std::int64_t column_of(Variable var) const;
     std::int64_t row_of(ConstraintRef cref) const;
@@ -83,6 +104,8 @@ private:
     // constraint_coefficient() stays correct even for a pair that was a
     // structural zero (absent from the matrix) at flatten time.
     std::map<std::pair<std::int64_t, std::int64_t>, double> coefficient_overrides_;
+
+    ProgressCallback progress_callback_;
 };
 
 }  // namespace saiopt

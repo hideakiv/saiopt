@@ -35,6 +35,50 @@ HighsInt to_highs_integrality(VarKind kind) {
     return kind == VarKind::Continuous ? kHighsVarTypeContinuous : kHighsVarTypeInteger;
 }
 
+// The trampoline HiGHS calls for every event type HighsSolver starts
+// listening for; `user_data` is the HighsSolver instance passed to
+// Highs_setCallback. Builds a solver-agnostic SolverProgress from
+// whichever HighsCallbackDataOut fields apply to `callback_type`, and
+// sets HiGHS' own interrupt flag if the registered callback (if any)
+// asked to stop.
+void highs_progress_trampoline(int callback_type, const char* /*message*/,
+                                const HighsCallbackDataOut* data_out, HighsCallbackDataIn* data_in,
+                                void* user_data) {
+    auto* self = static_cast<HighsSolver*>(user_data);
+
+    SolverProgress progress;
+    progress.elapsed_seconds = data_out->running_time;
+    progress.objective_value = data_out->objective_function_value;
+    if (callback_type == kHighsCallbackMipInterrupt) {
+        progress.iterations = data_out->mip_total_lp_iterations;
+        progress.best_bound = data_out->mip_dual_bound;
+        progress.gap = data_out->mip_gap;
+        progress.node_count = data_out->mip_node_count;
+    } else if (callback_type == kHighsCallbackIpmInterrupt) {
+        progress.iterations = data_out->ipm_iteration_count;
+    } else {
+        progress.iterations = data_out->simplex_iteration_count;
+    }
+
+    if (!self->invoke_progress_callback(progress)) {
+        data_in->user_interrupt = 1;
+    }
+}
+
+// Registers the trampoline above and starts listening for the event
+// types that can actually honor an interrupt request (unlike, say, the
+// logging-flavored events) -- covers LP simplex, LP IPM, and MIP
+// branch-and-bound progress in one shot.
+void start_progress_callback(void* highs, HighsSolver* self) {
+    HighsInt status = Highs_setCallback(highs, &highs_progress_trampoline, self);
+    if (status != kHighsStatusOk) {
+        throw std::runtime_error("HiGHS rejected the progress callback registration");
+    }
+    Highs_startCallback(highs, kHighsCallbackSimplexInterrupt);
+    Highs_startCallback(highs, kHighsCallbackIpmInterrupt);
+    Highs_startCallback(highs, kHighsCallbackMipInterrupt);
+}
+
 void check_option_status(HighsInt status, const std::string& key) {
     if (status != kHighsStatusOk) {
         throw std::runtime_error("HiGHS rejected option \"" + key + "\"");
@@ -87,6 +131,8 @@ HighsSolver::HighsSolver(const Model& model, const SolverOptions& options) : lp_
                 Highs_changeColIntegrality(highs_, static_cast<HighsInt>(i), kHighsVarTypeInteger);
             }
         }
+
+        start_progress_callback(highs_, this);
     } catch (...) {
         // A throwing constructor's destructor never runs, so highs_ would
         // otherwise leak here -- clean it up ourselves before propagating.
@@ -107,8 +153,13 @@ HighsSolver::HighsSolver(HighsSolver&& other) noexcept
       lp_(std::move(other.lp_)),
       var_column_(std::move(other.var_column_)),
       constraint_row_(std::move(other.constraint_row_)),
-      coefficient_overrides_(std::move(other.coefficient_overrides_)) {
+      coefficient_overrides_(std::move(other.coefficient_overrides_)),
+      progress_callback_(std::move(other.progress_callback_)) {
     other.highs_ = nullptr;
+    // Highs_setCallback's user_data is a raw `this` pointer, captured at
+    // registration time -- refresh it to this (new) object's address, or
+    // HiGHS would keep calling back into the moved-from one.
+    if (highs_) Highs_setCallback(highs_, &highs_progress_trampoline, this);
 }
 
 HighsSolver& HighsSolver::operator=(HighsSolver&& other) noexcept {
@@ -119,7 +170,9 @@ HighsSolver& HighsSolver::operator=(HighsSolver&& other) noexcept {
         var_column_ = std::move(other.var_column_);
         constraint_row_ = std::move(other.constraint_row_);
         coefficient_overrides_ = std::move(other.coefficient_overrides_);
+        progress_callback_ = std::move(other.progress_callback_);
         other.highs_ = nullptr;
+        if (highs_) Highs_setCallback(highs_, &highs_progress_trampoline, this);
     }
     return *this;
 }
@@ -289,6 +342,15 @@ void HighsSolver::set_variable_kind(Variable var, VarKind kind) {
     std::int64_t col = column_of(var);
     Highs_changeColIntegrality(highs_, static_cast<HighsInt>(col), to_highs_integrality(kind));
     lp_.col_kind[static_cast<std::size_t>(col)] = kind;
+}
+
+void HighsSolver::set_progress_callback(ProgressCallback callback) {
+    progress_callback_ = std::move(callback);
+}
+
+bool HighsSolver::invoke_progress_callback(const SolverProgress& progress) const {
+    if (!progress_callback_) return true;
+    return progress_callback_(progress);
 }
 
 namespace {

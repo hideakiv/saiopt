@@ -1,9 +1,11 @@
 #include <cmath>
 #include <stdexcept>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
 #include "saiopt/solver.hpp"
 
@@ -161,5 +163,70 @@ TEST_CASE("create_solver applies backend-specific options", "[lp]") {
     SECTION("an invalid value for a recognized option throws") {
         REQUIRE_THROWS_AS(create_solver(model, "highs", SolverOptions{}.set_double("mip_rel_gap", -5.0)),
                            std::runtime_error);
+    }
+}
+
+namespace {
+
+// A knapsack MIP with enough binary choices that HiGHS' branch-and-bound
+// does real work -- unlike a trivial LP/MIP, which can solve before a
+// progress callback ever gets a chance to fire.
+Model build_knapsack() {
+    Model model;
+    std::vector<int> items(40);
+    for (int i = 0; i < 40; ++i) items[i] = i;
+
+    SAIOPT_VARS(model, x, items, .kind = VarKind::Binary);
+
+    LinearExpression weight;
+    LinearExpression value;
+    for (int i : items) {
+        double w = 1.0 + (i * 37 % 23);
+        double v = 1.0 + (i * 53 % 29);
+        weight += w * x[i];
+        value += v * x[i];
+    }
+    model.add_constraint("cap", weight <= 130.0);
+    model.set_objective(ObjectiveSense::Maximize, value);
+    return model;
+}
+
+}  // namespace
+
+TEST_CASE("progress callback fires during solve and can interrupt it", "[lp]") {
+    Model model = build_knapsack();
+
+    SECTION("fires at least once and never interrupts when it always returns true") {
+        int calls = 0;
+        auto solver = create_solver(model, "highs");
+        solver->set_progress_callback([&](const SolverProgress&) {
+            ++calls;
+            return true;
+        });
+        SolveResult result = solver->solve();
+        REQUIRE(result.optimal);
+        REQUIRE(calls > 0);
+    }
+
+    SECTION("returning false interrupts the solve") {
+        int calls = 0;
+        auto solver = create_solver(model, "highs");
+        solver->set_progress_callback([&](const SolverProgress&) {
+            ++calls;
+            return false;
+        });
+        SolveResult result = solver->solve();
+        REQUIRE_FALSE(result.optimal);
+        REQUIRE(calls > 0);
+    }
+
+    SECTION("a fresh Solver still solves cleanly after a different one was interrupted") {
+        auto interrupted = create_solver(model, "highs");
+        interrupted->set_progress_callback([](const SolverProgress&) { return false; });
+        interrupted->solve();
+
+        auto solver = create_solver(model, "highs");
+        SolveResult result = solver->solve();
+        REQUIRE(result.optimal);
     }
 }

@@ -128,6 +128,28 @@ option-setting API; passing a name or value a backend rejects throws
 documentation for its full option list (e.g. `time_limit`,
 `mip_rel_gap`, `presolve`, `threads`, `output_flag`).
 
+`solver->set_progress_callback(...)` registers a callback that fires
+periodically during `solve()` with a `SolverProgress` snapshot
+(elapsed time, iteration count, objective value, and -- for a MIP
+search -- best bound/gap/node count as `std::optional`s, unset outside a
+MIP). Returning `false` requests the solve stop early:
+
+```cpp
+auto solver = create_solver(model, "highs");
+solver->set_progress_callback([](const SolverProgress& p) {
+    std::printf("t=%.1fs obj=%.2f\n", p.elapsed_seconds, p.objective_value);
+    return p.elapsed_seconds < 30.0;  // stop after 30 seconds
+});
+SolveResult result = solver->solve();  // reports non-optimal if interrupted
+```
+
+An interrupted `Solver` isn't guaranteed to behave like a fresh one if
+you call `solve()` on it again -- `HighsSolver` in particular leaves the
+underlying HiGHS instance stuck reporting the interrupt on every
+subsequent `solve()` (confirmed against HiGHS 1.15.1; neither clearing
+the callback nor HiGHS' own solver/model reset calls un-stick it).
+Build a new `Solver` via `create_solver` for a clean re-attempt.
+
 `Solver` also carries coefficient/bound/kind get/set methods that used
 to live on `Model` -- `objective_coefficient`/`set_objective_coefficient`,
 `constraint_coefficient`/`set_constraint_coefficient`,

@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <map>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "saiopt/macros.hpp"
@@ -50,9 +51,9 @@ int main() {
 
     Model model;
 
-    SAIOPT_VARS(model, x, names, ([&](const std::string& name) {
-                    return VariableDef::continuous().bound(0.0, by_name.at(name)->max_units);
-                }));
+    SAIOPT_VARS(model, x, names, .bounds = [&](const std::string& name) {
+        return std::tuple{0.0, by_name.at(name)->max_units};
+    });
 
     LinearExpression calories_total;
     LinearExpression protein_total;

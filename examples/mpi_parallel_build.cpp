@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
     double cost_per_unit = 5.0 - 0.5 * rank;
 
     Block region;
-    SAIOPT_VAR(region, produce, VariableDef::continuous().bound(0.0, capacity));
+    SAIOPT_VAR(region, produce, .bounds = {0.0, capacity});
     SAIOPT_OBJECTIVE(region, cost_per_unit * produce);
 
     if (rank != 0) {

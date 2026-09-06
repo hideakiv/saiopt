@@ -29,11 +29,11 @@ int main() {
 
     Model model;
 
-    SAIOPT_VARS(model, open, regions, ([](const std::string&) { return VariableDef::binary(); }));
+    SAIOPT_VARS(model, open, regions, .kind = VarKind::Binary);
 
     SAIOPT_BLOCKS(model, region, regions, ([](const std::string&) {
                       Block child;
-                      SAIOPT_VAR(child, y, VariableDef::continuous().bound(0.0, 10.0));
+                      SAIOPT_VAR(child, y, .bounds = {0.0, 10.0});
                       return child;
                   }));
 

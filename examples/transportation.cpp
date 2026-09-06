@@ -31,8 +31,7 @@ int main() {
     Model model;
 
     auto routes = cross(warehouses, customers);
-    SAIOPT_VARS(model, x, routes,
-                ([](const auto&) { return VariableDef::continuous().bound(0.0, kInfinity); }));
+    SAIOPT_VARS(model, x, routes, .bounds = {0.0, kInfinity});
 
     // Never ship more than a warehouse has on hand.
     SAIOPT_CONSTRAINTS(model, supply_limit, warehouses, ([&](const std::string& w) {

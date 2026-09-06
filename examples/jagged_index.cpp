@@ -41,8 +41,7 @@ int main() {
     }
 
     Model model;
-    SAIOPT_VARS(model, ship, arcs,
-                ([](const auto&) { return VariableDef::continuous().bound(0.0, kInfinity); }));
+    SAIOPT_VARS(model, ship, arcs, .bounds = {0.0, kInfinity});
 
     // Per-warehouse capacity: sum only over its own reachable customers.
     // Indexed by the map's *keys*, not the map itself -- iterating a map

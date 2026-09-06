@@ -73,8 +73,8 @@ written the same way:
 using namespace saiopt;
 
 Model model;
-SAIOPT_VAR(model, bread, VariableDef::continuous());
-SAIOPT_VAR(model, milk, VariableDef::continuous());
+SAIOPT_VAR(model, bread);   // kind defaults to Continuous, bounds to unbounded
+SAIOPT_VAR(model, milk);
 
 SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, 2.0 * bread + 3.0 * milk);
 SAIOPT_CONSTRAINT(model, protein, 4.0 * bread + 8.0 * milk >= 20.0);
@@ -83,6 +83,23 @@ SAIOPT_CONSTRAINT(model, calories, 100.0 * bread + 150.0 * milk >= 400.0);
 auto solver = create_solver(model, "highs");
 SolveResult result = solver->solve();
 ```
+
+`SAIOPT_VAR`/`SAIOPT_VARS` never spell out a `VariableDef` -- `kind` and
+`bounds` are optional, keyword-style (C++20 designated initializers),
+independent of each other:
+
+```cpp
+SAIOPT_VAR(model, x, .bounds = {0.0, 6.0});                  // continuous, bounded
+SAIOPT_VAR(model, flag, .kind = VarKind::Binary);            // binary
+SAIOPT_VARS(model, open, regions, .kind = VarKind::Binary);  // uniform across the whole index
+
+// `bounds` on SAIOPT_VARS may also be a per-key lambda, looked up by key
+// (not a parallel vector, which could drift out of sync with `index`):
+SAIOPT_VARS(model, x, foods,
+            .bounds = [&](const std::string& k) { return std::tuple{0.0, cap.at(k)}; });
+```
+
+See `saiopt/var_spec.hpp` for the two spec types behind this.
 
 `create_solver(model, name)` looks up the backend registered under `name`
 (linking `saiopt_highs` registers `"highs"`; writing your own backend is

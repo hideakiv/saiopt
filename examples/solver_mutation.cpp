@@ -26,8 +26,8 @@ int main() {
     using namespace saiopt;
 
     Model model;
-    SAIOPT_VAR(model, x, VariableDef::continuous().bound(0.0, 6.0));
-    SAIOPT_VAR(model, y, VariableDef::continuous().bound(0.0, kInfinity));
+    SAIOPT_VAR(model, x, .bounds = {0.0, 6.0});
+    SAIOPT_VAR(model, y, .bounds = {0.0, kInfinity});
     SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, 2.0 * x + 3.0 * y);
     SAIOPT_CONSTRAINT(model, demand, x + y >= 10.0);
 

@@ -13,8 +13,8 @@ using Catch::Approx;
 
 TEST_CASE("a flat block round-trips through serialize/deserialize", "[serialize]") {
     Block block;
-    SAIOPT_VAR(block, x, VariableDef::continuous().bound(0.0, 6.0));
-    SAIOPT_VAR(block, y, VariableDef::continuous().bound(0.0, kInfinity));
+    SAIOPT_VAR(block, x, .bounds = {0.0, 6.0});
+    SAIOPT_VAR(block, y, .bounds = {0.0, kInfinity});
     SAIOPT_CONSTRAINT(block, total, x + y >= 5.0);
     block.set_objective(2.0 * x + 3.0 * y);
 
@@ -92,7 +92,7 @@ TEST_CASE("an unnamed variable round-trips without a name", "[serialize]") {
 
 TEST_CASE("deserialize rejects a truncated buffer", "[serialize]") {
     Block block;
-    SAIOPT_VAR(block, x, VariableDef::continuous());
+    SAIOPT_VAR(block, x);
     block.set_objective(x);
 
     std::vector<std::byte> bytes = block.serialize();

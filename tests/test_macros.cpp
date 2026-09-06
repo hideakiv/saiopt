@@ -1,4 +1,6 @@
+#include <map>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -14,14 +16,14 @@ using Catch::Approx;
 
 TEST_CASE("SAIOPT_VAR declares a named local bound to the same lookup name", "[macros]") {
     Model model;
-    SAIOPT_VAR(model, x, VariableDef::continuous().bound(0.0, 4.0));
+    SAIOPT_VAR(model, x, .bounds = {0.0, 4.0});
 
     REQUIRE(model.var("x") == x);
 }
 
 TEST_CASE("SAIOPT_CONSTRAINT declares a named local bound to the same lookup name", "[macros]") {
     Model model;
-    SAIOPT_VAR(model, x, VariableDef::continuous().bound(0.0, 4.0));
+    SAIOPT_VAR(model, x, .bounds = {0.0, 4.0});
     SAIOPT_CONSTRAINT(model, cap, x <= 4.0);
 
     REQUIRE(model.constraint("cap") == cap);
@@ -38,17 +40,48 @@ TEST_CASE("SAIOPT_BLOCK / SAIOPT_BLOCK_SCALED attach a named child block", "[mac
 TEST_CASE("SAIOPT_VARS declares one variable per index item, named by key", "[macros]") {
     Model model;
     std::vector<std::string> items{"a", "b"};
-    SAIOPT_VARS(model, open, items, ([](const std::string&) { return VariableDef::binary(); }));
+    SAIOPT_VARS(model, open, items, .kind = VarKind::Binary);
 
     REQUIRE(open.size() == 2);
     REQUIRE(model.var("open[a]") == open[std::string("a")]);
     REQUIRE(model.var("open[b]") == open[std::string("b")]);
 }
 
+TEST_CASE("SAIOPT_VARS accepts a per-key lambda for bounds", "[macros]") {
+    Model model;
+    std::vector<std::string> items{"a", "b"};
+    std::map<std::string, double> caps{{"a", 4.0}, {"b", 9.0}};
+
+    SAIOPT_VARS(model, x, items,
+                .bounds = [&](const std::string& k) { return std::tuple{0.0, caps.at(k)}; });
+    model.set_objective(ObjectiveSense::Minimize, LinearExpression{});
+
+    REQUIRE(x.size() == 2);
+    auto solver = create_solver(model, "highs");
+    REQUIRE(solver->variable_upper(x[std::string("a")]) == Approx(4.0));
+    REQUIRE(solver->variable_upper(x[std::string("b")]) == Approx(9.0));
+}
+
+TEST_CASE("SAIOPT_VARS accepts a per-key lambda for kind", "[macros]") {
+    Model model;
+    std::vector<std::string> items{"a", "b"};
+    std::map<std::string, bool> is_discrete{{"a", true}, {"b", false}};
+
+    SAIOPT_VARS(model, x, items, .kind = [&](const std::string& k) {
+        return is_discrete.at(k) ? VarKind::Integer : VarKind::Continuous;
+    });
+    model.set_objective(ObjectiveSense::Minimize, LinearExpression{});
+
+    REQUIRE(x.size() == 2);
+    auto solver = create_solver(model, "highs");
+    REQUIRE(solver->variable_kind(x[std::string("a")]) == VarKind::Integer);
+    REQUIRE(solver->variable_kind(x[std::string("b")]) == VarKind::Continuous);
+}
+
 TEST_CASE("SAIOPT_CONSTRAINTS declares one constraint per index item, named by prefix", "[macros]") {
     Model model;
     std::vector<std::string> items{"a", "b"};
-    SAIOPT_VARS(model, x, items, ([](const std::string&) { return VariableDef::continuous(); }));
+    SAIOPT_VARS(model, x, items);
     SAIOPT_CONSTRAINTS(model, cap, items,
                         ([&](const std::string& k) { return x[k] <= 4.0; }));
 
@@ -73,7 +106,7 @@ TEST_CASE("cross() builds flat multi-dimensional indices for indexed vars", "[ma
     std::vector<std::string> markets{"m1"};
     auto routes = cross(plants, markets);
 
-    SAIOPT_VARS(model, ship, routes, ([](const auto&) { return VariableDef::continuous(); }));
+    SAIOPT_VARS(model, ship, routes);
 
     REQUIRE(ship.size() == 2);
     REQUIRE(model.var("ship[(p1, m1)]").has_value());
@@ -87,7 +120,7 @@ TEST_CASE("cross() stays flat past two ranges", "[macros]") {
     std::vector<int> periods{1, 2};
     auto route_periods = cross(plants, markets, periods);
 
-    SAIOPT_VARS(model, ship, route_periods, ([](const auto&) { return VariableDef::continuous(); }));
+    SAIOPT_VARS(model, ship, route_periods);
 
     // A flat std::tuple<std::string, std::string, int>, not
     // std::tuple<std::tuple<std::string, std::string>, int> -- so the
@@ -100,7 +133,7 @@ TEST_CASE("cross() stays flat past two ranges", "[macros]") {
 TEST_CASE("indexed vars solve and their values can be looked up in bulk", "[macros]") {
     Model model;
     std::vector<std::string> items{"a", "b"};
-    SAIOPT_VARS(model, x, items, ([](const std::string&) { return VariableDef::continuous().bound(0.0, 5.0); }));
+    SAIOPT_VARS(model, x, items, .bounds = {0.0, 5.0});
     SAIOPT_CONSTRAINTS(model, cap, items, ([&](const std::string& k) { return x[k] <= 5.0; }));
 
     LinearExpression total;

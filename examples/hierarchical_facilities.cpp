@@ -49,9 +49,8 @@ struct Facility {
 Block build_facility_block(const Facility& f, const std::vector<int>& period_range) {
     Block sub;
 
-    SAIOPT_VARS(sub, produce, period_range,
-                ([&](int) { return VariableDef::continuous().bound(0.0, f.period_capacity); }));
-    SAIOPT_VAR(sub, produce_total, VariableDef::continuous());
+    SAIOPT_VARS(sub, produce, period_range, .bounds = {0.0, f.period_capacity});
+    SAIOPT_VAR(sub, produce_total);
 
     LinearExpression produce_sum;
     for (const auto& [period, var] : produce) {
@@ -85,8 +84,7 @@ int main() {
     std::iota(period_range.begin(), period_range.end(), 0);
 
     Model model;
-    SAIOPT_VARS(model, open, names,
-                ([](const std::string&) { return VariableDef::binary(); }));
+    SAIOPT_VARS(model, open, names, .kind = VarKind::Binary);
 
     SAIOPT_BLOCKS_SCALED(
         model, facility, names,

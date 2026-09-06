@@ -1,20 +1,30 @@
 #pragma once
 
 #include "saiopt/indexed.hpp"
+#include "saiopt/var_spec.hpp"
 
 // Convenience declaration macros: derive both a local C++ variable's name
 // and its saiopt lookup name from a single identifier, so a later
 // Model::var / Model::constraint / Model::child lookup doesn't need the
 // name repeated as a separate string literal.
 //
-//   SAIOPT_VAR(model, x, VariableDef::continuous().bound(0.0, 4.0));
-//   // expands to: auto x = model.add_var(VariableDef::continuous().bound(0.0, 4.0).name("x"));
-//
 // Prefixed with SAIOPT_ (rather than bare VAR/CONSTRAINT/BLOCK) since C++
 // preprocessor macros are global and unscoped, and those bare names would
 // be too easy to collide with unrelated code.
 
-#define SAIOPT_VAR(block, ident, def) [[maybe_unused]] auto ident = (block).add_var((def).name(#ident))
+// `kind` and `bounds` are both optional, keyword-style (C++20 designated
+// initializers), and independent -- kind defaults to VarKind::Continuous,
+// bounds default to unbounded:
+//
+//   SAIOPT_VAR(model, x);                                     // continuous, unbounded
+//   SAIOPT_VAR(model, x, .bounds = {0.0, 6.0});                // continuous, bounded
+//   SAIOPT_VAR(model, flag, .kind = VarKind::Binary);          // binary (bounds fixed at [0,1])
+//   SAIOPT_VAR(model, n, .kind = VarKind::Integer, .bounds = {0.0, 10.0});
+//
+// See saiopt/var_spec.hpp for VarSpec.
+#define SAIOPT_VAR(block, ident, ...) \
+    [[maybe_unused]] auto ident =     \
+        (block).add_var(::saiopt::detail::make_var_def(::saiopt::detail::VarSpec{__VA_ARGS__}).name(#ident))
 
 #define SAIOPT_CONSTRAINT(block, ident, expr) [[maybe_unused]] auto ident = (block).add_constraint(#ident, (expr))
 
@@ -25,11 +35,28 @@
 
 // The indexed counterpart to SAIOPT_VAR: declare one variable per item of
 // an index, deriving each item's name from the same single identifier.
-// `def` must not already call .name(...) itself -- the macro's own naming
-// always overwrites it, same as SAIOPT_VAR.
-#define SAIOPT_VARS(block, ident, index, def)                                                   \
-    [[maybe_unused]] auto ident = (block).add_vars((index), [&](const auto& saiopt_key) {                        \
-        return (def)(saiopt_key).name(::saiopt::detail::indexed_name(#ident, saiopt_key));      \
+// `kind` and `bounds` work the same as SAIOPT_VAR (both optional, same
+// defaults) and are uniform across the whole group by default -- but
+// either may instead be a callable `key -> ...` for a per-item value
+// looked up by key (not a parallel vector, which could drift out of
+// sync with `index` positionally). A per-item `kind` is expected to be
+// rare -- real models have so far only ever needed per-item `bounds` --
+// but is supported the same way, for completeness:
+//
+//   SAIOPT_VARS(model, open, regions);                                    // continuous, unbounded
+//   SAIOPT_VARS(model, open, regions, .kind = VarKind::Binary);           // binary, uniform
+//   SAIOPT_VARS(model, x, routes, .bounds = {0.0, kInfinity});            // continuous, uniform bounds
+//   SAIOPT_VARS(model, x, foods,
+//               .bounds = [&](const std::string& k) { return std::tuple{0.0, cap.at(k)}; });
+//   SAIOPT_VARS(model, x, items,
+//               .kind = [&](const std::string& k) { return is_discrete.at(k) ? VarKind::Integer
+//                                                                             : VarKind::Continuous; });
+//
+// See saiopt/var_spec.hpp for VarsSpec.
+#define SAIOPT_VARS(block, ident, index, ...)                                                        \
+    [[maybe_unused]] auto ident = (block).add_vars((index), [&](const auto& saiopt_key) {            \
+        return ::saiopt::detail::make_var_def(::saiopt::detail::VarsSpec{__VA_ARGS__}, saiopt_key)   \
+            .name(::saiopt::detail::indexed_name(#ident, saiopt_key));                               \
     })
 
 // The indexed counterpart to SAIOPT_CONSTRAINT: declare one constraint per

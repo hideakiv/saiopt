@@ -5,7 +5,7 @@
 
 // Convenience declaration macros: derive both a local C++ variable's name
 // and its saiopt lookup name from a single identifier, so a later
-// Model::var / Model::constraint / Model::child lookup doesn't need the
+// Model::var / Model::constraint / Model::block lookup doesn't need the
 // name repeated as a separate string literal.
 //
 // Prefixed with SAIOPT_ (rather than bare VAR/CONSTRAINT/BLOCK) since C++
@@ -73,8 +73,8 @@
 // can't also look a sibling block up by name inside the same expression --
 // build any cross-block constraint in a separate step after SAIOPT_BLOCKS
 // completes, using either the handles the child-building closure returned
-// some other way, or a fresh model.child(...) lookup once the block is
-// attached.
+// some other way, or a fresh model.blocks(name, index) (or, one at a time,
+// model.block(name)) lookup once every block is attached.
 #define SAIOPT_BLOCKS(block, ident, index, child) \
     [[maybe_unused]] auto ident = (block).add_blocks(#ident, (index), (child))
 

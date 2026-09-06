@@ -131,9 +131,33 @@ public:
     const Block& block(BlockRef ref) const { return root_.block(ref); }
     Block& block(BlockRef ref) { return root_.block(ref); }
 
+    // Look up a child block added with add_block / add_block_scaled under
+    // `name`.
+    const Block* block(const std::string& name) const { return root_.block(name); }
+    Block* block(const std::string& name) { return root_.block(name); }
+
+    // Look up a whole indexed group of child blocks added by add_blocks
+    // (or SAIOPT_BLOCKS/add_blocks_scaled/SAIOPT_BLOCKS_SCALED) at the
+    // model's root -- see Block::blocks.
+    template <typename Range>
+    auto blocks(const std::string& name, const Range& index) const {
+        return root_.blocks(name, index);
+    }
+    template <typename Range>
+    auto blocks(const std::string& name, const Range& index) {
+        return root_.blocks(name, index);
+    }
+
     // Look up a variable added with .name(name) at the model's root (not
     // inside any attached block).
     std::optional<Variable> var(const std::string& name) const { return root_.var(name); }
+
+    // Look up a whole indexed group of variables added by add_vars (or
+    // SAIOPT_VARS) at the model's root -- see Block::vars.
+    template <typename Range>
+    auto vars(const std::string& name, const Range& index) const {
+        return root_.vars(name, index);
+    }
 
     // Look up a constraint added under `name` at the model's root (not
     // inside any attached block).
@@ -141,10 +165,13 @@ public:
         return root_.constraint(name);
     }
 
-    // Look up a child block added with add_block / add_block_scaled under
-    // `name`.
-    const Block* child(const std::string& name) const { return root_.child(name); }
-    Block* child(const std::string& name) { return root_.child(name); }
+    // Look up a whole indexed group of constraints added by
+    // add_constraints (or SAIOPT_CONSTRAINTS) at the model's root -- see
+    // Block::constraints.
+    template <typename Range>
+    auto constraints(const std::string& name, const Range& index) const {
+        return root_.constraints(name, index);
+    }
 
     void set_objective(ObjectiveSense sense, LinearExpression expr) {
         sense_ = sense;

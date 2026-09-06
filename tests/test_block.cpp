@@ -43,10 +43,10 @@ TEST_CASE("nested blocks aggregate scaled objectives", "[block]") {
     REQUIRE(result.value(x) == Approx(10.0));
     REQUIRE(result.value(y) == Approx(4.0));
 
-    const Block* found = model.child("widgets");
+    const Block* found = model.block("widgets");
     REQUIRE(found != nullptr);
     REQUIRE(found->var("x").has_value());
-    REQUIRE(model.child("nonexistent") == nullptr);
+    REQUIRE(model.block("nonexistent") == nullptr);
 }
 
 TEST_CASE("duplicate variable name in a block throws", "[block]") {

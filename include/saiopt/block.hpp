@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -51,7 +52,9 @@ struct ChildBlock;
 // Every variable, constraint, and attached block is named (a variable's
 // name is optional, via VariableDef::name; a constraint's or attached
 // block's name is mandatory) and can be looked back up later with var /
-// constraint / child -- each block has its own local namespace, so a lookup
+// constraint / block (or their collection counterparts vars / constraints /
+// blocks, for a whole SAIOPT_VARS/SAIOPT_CONSTRAINTS/SAIOPT_BLOCKS-declared
+// group at once) -- each block has its own local namespace, so a lookup
 // only ever searches that block's own vars/constraints/children, not its
 // descendants'.
 //
@@ -103,7 +106,7 @@ public:
     void set_objective(LinearExpression expr);
 
     // Move `child` into this block's tree with a multiplier of 1.0, under
-    // `name` so it can later be reached with child/child_mut. See
+    // `name` so it can later be reached with block(name). See
     // add_block_scaled.
     BlockRef add_block(std::string name, Block child);
 
@@ -136,17 +139,111 @@ public:
     const Block& block(BlockRef ref) const;
     Block& block(BlockRef ref);
 
+    // Look up a child block added with add_block / add_block_scaled under
+    // `name`.
+    const Block* block(const std::string& name) const;
+    Block* block(const std::string& name);
+
+    // Look up a whole indexed group of child blocks added by add_blocks
+    // (or SAIOPT_BLOCKS/add_blocks_scaled/SAIOPT_BLOCKS_SCALED) in *this*
+    // block, replaying the same "{name}[{key}]" naming convention those
+    // used to name each one -- the collection counterpart to the by-name
+    // block() above, for getting back every child (as an
+    // Indexed<K, const Block*>/Indexed<K, Block*>, not one Block* at a
+    // time) once the original Indexed<K, BlockRef> those macros returned
+    // is out of scope. `index` need not be the exact same range object
+    // add_blocks was called with, only equal key-for-key. See vars() (the
+    // same thing, for variables) for the full rationale, including why
+    // this throws (naming the first missing key) rather than silently
+    // skipping a child that isn't there.
+    template <typename Range>
+    auto blocks(const std::string& name, const Range& index) const {
+        using K = std::decay_t<decltype(*std::begin(index))>;
+        std::map<K, const Block*> map;
+        for (const auto& k : index) {
+            std::string full_name = detail::indexed_name(name, k);
+            const Block* b = block(full_name);
+            if (!b) throw std::runtime_error("blocks(): no child block named \"" + full_name + "\" in this block");
+            map.emplace(k, b);
+        }
+        return Indexed<K, const Block*>::from_map(std::move(map));
+    }
+
+    template <typename Range>
+    auto blocks(const std::string& name, const Range& index) {
+        using K = std::decay_t<decltype(*std::begin(index))>;
+        std::map<K, Block*> map;
+        for (const auto& k : index) {
+            std::string full_name = detail::indexed_name(name, k);
+            Block* b = block(full_name);
+            if (!b) throw std::runtime_error("blocks(): no child block named \"" + full_name + "\" in this block");
+            map.emplace(k, b);
+        }
+        return Indexed<K, Block*>::from_map(std::move(map));
+    }
+
     // Look up a variable added with .name(name) in *this* block (not its
     // descendants).
     std::optional<Variable> var(const std::string& name) const;
+
+    // Look up a whole indexed group of variables added by add_vars (or
+    // SAIOPT_VARS) in *this* block, replaying the same "{name}[{key}]"
+    // naming convention add_vars used to name each one -- the collection
+    // counterpart to var(), for getting back an Indexed<K, Variable> (not
+    // one Variable at a time) once the original handle add_vars/SAIOPT_VARS
+    // returned is out of scope. `index` need not be the exact same range
+    // object add_vars was called with, only equal key-for-key.
+    //
+    // Unlike var(), which returns an empty std::optional for a name that
+    // isn't there, this throws std::runtime_error naming the first missing
+    // key: a whole indexed group either was declared with this exact index
+    // or wasn't, so a partial result would just be a bug hiding as data.
+    template <typename Range>
+    auto vars(const std::string& name, const Range& index) const {
+        using K = std::decay_t<decltype(*std::begin(index))>;
+        std::map<K, Variable> map;
+        for (const auto& k : index) {
+            std::string full_name = detail::indexed_name(name, k);
+            std::optional<Variable> v = var(full_name);
+            if (!v) throw std::runtime_error("vars(): no variable named \"" + full_name + "\" in this block");
+            map.emplace(k, *v);
+        }
+        return Indexed<K, Variable>::from_map(std::move(map));
+    }
 
     // Look up a constraint added under `name` in *this* block (not its
     // descendants).
     std::optional<ConstraintRef> constraint(const std::string& name) const;
 
-    // Look up a child added with add_block / add_block_scaled under `name`.
-    const Block* child(const std::string& name) const;
-    Block* child(const std::string& name);
+    // Look up a whole indexed group of constraints added by
+    // add_constraints (or SAIOPT_CONSTRAINTS) in *this* block, replaying
+    // the same "{name}[{key}]" naming convention add_constraints used to
+    // name each one -- the collection counterpart to constraint(), for
+    // getting back an Indexed<K, ConstraintRef> (not one ConstraintRef at
+    // a time) once the original handle add_constraints/SAIOPT_CONSTRAINTS
+    // returned is out of scope. `index` need not be the exact same range
+    // object add_constraints was called with, only equal key-for-key. See
+    // vars() (the same thing, for variables) for the full rationale.
+    //
+    // Unlike constraint(), which returns an empty std::optional for a
+    // name that isn't there, this throws std::runtime_error naming the
+    // first missing key: a whole indexed group either was declared with
+    // this exact index or wasn't, so a partial result would just be a bug
+    // hiding as data.
+    template <typename Range>
+    auto constraints(const std::string& name, const Range& index) const {
+        using K = std::decay_t<decltype(*std::begin(index))>;
+        std::map<K, ConstraintRef> map;
+        for (const auto& k : index) {
+            std::string full_name = detail::indexed_name(name, k);
+            std::optional<ConstraintRef> c = constraint(full_name);
+            if (!c) {
+                throw std::runtime_error("constraints(): no constraint named \"" + full_name + "\" in this block");
+            }
+            map.emplace(k, *c);
+        }
+        return Indexed<K, ConstraintRef>::from_map(std::move(map));
+    }
 
     // Serialize this block's whole structure -- variables, constraints,
     // objective, and attached children, recursively, all with their names

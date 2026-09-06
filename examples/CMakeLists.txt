@@ -6,6 +6,7 @@ foreach(example
     transportation
     solver_mutation
     jagged_index
+    variable_lookup
 )
   add_executable(${example} ${example}.cpp)
   # saiopt_highs is only ever used through its "highs" self-registration

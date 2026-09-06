@@ -67,13 +67,13 @@ std::optional<ConstraintRef> Block::constraint(const std::string& name) const {
     return it->second;
 }
 
-const Block* Block::child(const std::string& name) const {
+const Block* Block::block(const std::string& name) const {
     auto it = child_names_.find(name);
     if (it == child_names_.end()) return nullptr;
     return &children_[it->second].block;
 }
 
-Block* Block::child(const std::string& name) {
+Block* Block::block(const std::string& name) {
     auto it = child_names_.find(name);
     if (it == child_names_.end()) return nullptr;
     return &children_[it->second].block;

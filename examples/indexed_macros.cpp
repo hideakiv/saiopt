@@ -41,11 +41,15 @@ int main() {
     // reference each region's own y in a root constraint, look it back up
     // by name now that every block is attached (can't do this from inside
     // a SAIOPT_CONSTRAINTS/add_constraints closure -- see SAIOPT_BLOCKS'
-    // docs).
+    // docs). Each region's "y" lives alone in its own child block, so this
+    // is Block::var (one variable), not Block::vars (a whole indexed
+    // group declared together in one block, e.g. examples/variable_lookup.cpp's
+    // "output[a]"/"output[b]"/"output[c]") -- there's no single block here
+    // holding every region's y for vars() to search.
     std::map<std::string, Variable> y;
     for (const auto& name : regions) {
-        Block* block = model.child("region[" + name + "]");
-        y.emplace(name, *block->var("y"));
+        Block* region_block = model.block("region[" + name + "]");
+        y.emplace(name, *region_block->var("y"));
     }
 
     SAIOPT_CONSTRAINTS(model, capacity, regions,

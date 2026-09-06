@@ -1,4 +1,5 @@
 #include <map>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -34,7 +35,7 @@ TEST_CASE("SAIOPT_BLOCK / SAIOPT_BLOCK_SCALED attach a named child block", "[mac
     Block child;
     SAIOPT_BLOCK_SCALED(model, sub, std::move(child), 0.5);
 
-    REQUIRE(model.child("sub") != nullptr);
+    REQUIRE(model.block("sub") != nullptr);
 }
 
 TEST_CASE("SAIOPT_VARS declares one variable per index item, named by key", "[macros]") {
@@ -45,6 +46,64 @@ TEST_CASE("SAIOPT_VARS declares one variable per index item, named by key", "[ma
     REQUIRE(open.size() == 2);
     REQUIRE(model.var("open[a]") == open[std::string("a")]);
     REQUIRE(model.var("open[b]") == open[std::string("b")]);
+}
+
+TEST_CASE("Model::vars/Block::vars look up a whole indexed group at once", "[macros]") {
+    Model model;
+    std::vector<std::string> items{"a", "b", "c"};
+    SAIOPT_VARS(model, open, items, .kind = VarKind::Binary);
+
+    SECTION("matches the original handle, key for key") {
+        auto looked_up = model.vars("open", items);
+
+        REQUIRE(looked_up.size() == open.size());
+        for (const auto& item : items) REQUIRE(looked_up[item] == open[item]);
+    }
+
+    SECTION("works the same way from inside a Block, not just Model's root") {
+        Block block;
+        std::vector<std::string> lines{"x", "y"};
+        SAIOPT_VARS(block, output, lines, .bounds = {0.0, kInfinity});
+
+        auto looked_up = block.vars("output", lines);
+        REQUIRE(looked_up.size() == output.size());
+        for (const auto& line : lines) REQUIRE(looked_up[line] == output[line]);
+    }
+
+    SECTION("throws naming the first key that wasn't declared") {
+        std::vector<std::string> wrong_items{"a", "nope"};
+        REQUIRE_THROWS_AS(model.vars("open", wrong_items), std::runtime_error);
+    }
+}
+
+TEST_CASE("Model::constraints/Block::constraints look up a whole indexed group at once", "[macros]") {
+    Model model;
+    std::vector<std::string> items{"a", "b", "c"};
+    SAIOPT_VARS(model, x, items);
+    SAIOPT_CONSTRAINTS(model, cap, items, ([&](const std::string& k) { return x[k] <= 4.0; }));
+
+    SECTION("matches the original handle, key for key") {
+        auto looked_up = model.constraints("cap", items);
+
+        REQUIRE(looked_up.size() == cap.size());
+        for (const auto& item : items) REQUIRE(looked_up[item] == cap[item]);
+    }
+
+    SECTION("works the same way from inside a Block, not just Model's root") {
+        Block block;
+        std::vector<std::string> lines{"p", "q"};
+        SAIOPT_VARS(block, y, lines);
+        SAIOPT_CONSTRAINTS(block, limit, lines, ([&](const std::string& k) { return y[k] <= 10.0; }));
+
+        auto looked_up = block.constraints("limit", lines);
+        REQUIRE(looked_up.size() == limit.size());
+        for (const auto& line : lines) REQUIRE(looked_up[line] == limit[line]);
+    }
+
+    SECTION("throws naming the first key that wasn't declared") {
+        std::vector<std::string> wrong_items{"a", "nope"};
+        REQUIRE_THROWS_AS(model.constraints("cap", wrong_items), std::runtime_error);
+    }
 }
 
 TEST_CASE("SAIOPT_VARS accepts a per-key lambda for bounds", "[macros]") {
@@ -96,8 +155,36 @@ TEST_CASE("SAIOPT_BLOCKS_SCALED attaches one child per index item, named by pref
                           ([](int) { return 0.5; }));
 
     REQUIRE(region.size() == 2);
-    REQUIRE(model.child("region[1]") != nullptr);
-    REQUIRE(model.child("region[2]") != nullptr);
+    REQUIRE(model.block("region[1]") != nullptr);
+    REQUIRE(model.block("region[2]") != nullptr);
+}
+
+TEST_CASE("Model::blocks/Block::blocks look up a whole indexed group at once", "[macros]") {
+    Model model;
+    std::vector<int> regions{1, 2, 3};
+    SAIOPT_BLOCKS(model, region, regions, ([](int) { return Block(); }));
+
+    SECTION("matches the original handle, key for key") {
+        auto looked_up = model.blocks("region", regions);
+
+        REQUIRE(looked_up.size() == region.size());
+        for (int r : regions) REQUIRE(looked_up[r] == &model.block(region[r]));
+    }
+
+    SECTION("works the same way from inside a Block, not just Model's root") {
+        Block block;
+        std::vector<int> lines{10, 20};
+        SAIOPT_BLOCKS(block, sub, lines, ([](int) { return Block(); }));
+
+        auto looked_up = block.blocks("sub", lines);
+        REQUIRE(looked_up.size() == sub.size());
+        for (int line : lines) REQUIRE(looked_up[line] == &block.block(sub[line]));
+    }
+
+    SECTION("throws naming the first key that wasn't declared") {
+        std::vector<int> wrong_regions{1, 99};
+        REQUIRE_THROWS_AS(model.blocks("region", wrong_regions), std::runtime_error);
+    }
 }
 
 TEST_CASE("cross() builds flat multi-dimensional indices for indexed vars", "[macros]") {

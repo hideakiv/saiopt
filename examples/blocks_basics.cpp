@@ -43,7 +43,7 @@ int main() {
     // same handles -- every name lives in the namespace of the block it was
     // declared on, so the whole tree can be walked back by name alone.
     Variable looked_up_x = *model.var("x");
-    Variable looked_up_y = *model.child("sub")->var("y");
+    Variable looked_up_y = *model.block("sub")->var("y");
     assert(looked_up_x == x);
     assert(looked_up_y == y);
     std::printf("(name-based lookup confirmed to match the original handles)\n");

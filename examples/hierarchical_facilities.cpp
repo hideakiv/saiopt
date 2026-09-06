@@ -96,7 +96,7 @@ int main() {
     // look it back up by name now that every block is attached.
     std::map<std::string, Variable> produce_total_of;
     for (const auto& name : names) {
-        Block* fb = model.child("facility[" + name + "]");
+        Block* fb = model.block("facility[" + name + "]");
         produce_total_of.emplace(name, *fb->var("produce_total"));
     }
 

@@ -38,8 +38,8 @@ Run an example:
 ```
 
 Other examples: `blocks_basics`, `indexed_macros`, `hierarchical_facilities`,
-`transportation`, `solver_mutation`, and `jagged_index` -- see `examples/`
-for what each demonstrates.
+`transportation`, `solver_mutation`, `jagged_index`, and `variable_lookup`
+-- see `examples/` for what each demonstrates.
 
 ## MPI
 
@@ -63,7 +63,14 @@ mpirun -n 4 ./build/examples/mpi_parallel_build
 `SAIOPT_CONSTRAINTS`, plus `SAIOPT_BLOCK[_SCALED]`/`SAIOPT_BLOCKS[_SCALED]`
 for attaching sub-models) derive both a local C++ variable's name and its
 `saiopt` lookup name from one identifier, so `model.var("bread")` later
-doesn't need `"bread"` repeated as a separate string literal. `SAIOPT_OBJECTIVE`
+doesn't need `"bread"` repeated as a separate string literal -- and
+`model.vars("open", regions)` (and, the same way, `model.constraints("cap",
+regions)` and `model.blocks("region", regions)`) looks up a whole
+`SAIOPT_VARS`/`SAIOPT_CONSTRAINTS`/`SAIOPT_BLOCKS`-declared group at once
+(an `Indexed<K, Variable>`/`Indexed<K, ConstraintRef>`/`Indexed<K, Block*>`,
+same shape as `open`/`cap`/`region` themselves), for code that only has
+the `Model`/`Block` and not the original handle those macros returned
+(see `examples/variable_lookup.cpp`). `SAIOPT_OBJECTIVE`
 rounds this family out as a thin wrapper around `set_objective` -- there's no
 name to derive there, so it's only for keeping every declaration in a model
 written the same way:

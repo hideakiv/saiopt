@@ -24,7 +24,7 @@ TEST_CASE("a flat block round-trips through serialize/deserialize", "[serialize]
     model.set_objective(ObjectiveSense::Minimize, LinearExpression{});
     model.add_block("sub", std::move(rebuilt));
 
-    const Block* sub = model.child("sub");
+    const Block* sub = model.block("sub");
     REQUIRE(sub != nullptr);
     REQUIRE(sub->var("x").has_value());
     REQUIRE(sub->var("y").has_value());
@@ -60,9 +60,9 @@ TEST_CASE("nested blocks with cross-block references round-trip and still solve"
     model.set_objective(ObjectiveSense::Minimize, LinearExpression{});
     model.add_block("root", std::move(rebuilt));
 
-    const Block* rebuilt_root = model.child("root");
+    const Block* rebuilt_root = model.block("root");
     REQUIRE(rebuilt_root != nullptr);
-    const Block* rebuilt_sub = rebuilt_root->child("sub");
+    const Block* rebuilt_sub = rebuilt_root->block("sub");
     REQUIRE(rebuilt_sub != nullptr);
 
     Variable new_x = *rebuilt_root->var("x");

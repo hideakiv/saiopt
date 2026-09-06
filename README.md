@@ -7,7 +7,9 @@ name-based factory (`saiopt/solver.hpp`), and any backend can implement
 it and register itself under a name -- no HiGHS-specific (or any other
 backend's) header required to use one. `saiopt_highs` ships one such
 backend, registered as `"highs"`, built on [HiGHS](https://highs.dev/)
-(linked via its C API).
+(linked via its C API). `saiopt_scip` ships another, registered as
+`"scip"`, built on [SCIP](https://scipopt.org/) (linked via its C API)
+with [SoPlex](https://soplex.zib.de/) as its LP solver.
 
 ## Building
 
@@ -18,9 +20,10 @@ cmake --build build -j
 
 This fetches and builds Catch2, and HiGHS for the `saiopt_highs` backend
 (unless configured with `-DSAIOPT_WITH_HIGHS=OFF`), as part of the
-configure step. It also looks for an MPI implementation and builds
-`saiopt_mpi` (see [MPI](#mpi) below) unless configured with
-`-DSAIOPT_WITH_MPI=OFF`.
+configure step. It also fetches and builds SoPlex and SCIP for the
+`saiopt_scip` backend (unless configured with `-DSAIOPT_WITH_SCIP=OFF`).
+It also looks for an MPI implementation and builds `saiopt_mpi` (see
+[MPI](#mpi) below) unless configured with `-DSAIOPT_WITH_MPI=OFF`.
 
 Run the tests:
 
@@ -102,8 +105,9 @@ SAIOPT_VARS(model, x, foods,
 See `saiopt/var_spec.hpp` for the two spec types behind this.
 
 `create_solver(model, name)` looks up the backend registered under `name`
-(linking `saiopt_highs` registers `"highs"`; writing your own backend is
-just implementing `Solver` and registering it -- see `saiopt/solver.hpp`)
+(linking `saiopt_highs` registers `"highs"`, `saiopt_scip` registers
+`"scip"`; writing your own backend is just implementing `Solver` and
+registering it -- see `saiopt/solver.hpp`)
 and translates `model` into that backend's native form once, handing back
 a `Solver` you keep and call `solve()` on. Calling `solve()` again reuses
 that same translated state rather than re-flattening the Block tree, so
@@ -126,7 +130,11 @@ auto solver = create_solver(model, "highs",
 option-setting API; passing a name or value a backend rejects throws
 `std::runtime_error` when the `Solver` is constructed. See HiGHS' own
 documentation for its full option list (e.g. `time_limit`,
-`mip_rel_gap`, `presolve`, `threads`, `output_flag`).
+`mip_rel_gap`, `presolve`, `threads`, `output_flag`). `ScipSolver` uses
+this the same way, but keyed by SCIP's own parameter names instead
+(e.g. `limits/time`, `limits/gap`, `limits/nodes`) -- `set_int` is
+tried against both SCIP's int- and Longint-valued parameters, since
+`SolverOptions` doesn't distinguish the two the way SCIP does.
 
 `solver->set_progress_callback(...)` registers a callback that fires
 periodically during `solve()` with a `SolverProgress` snapshot
@@ -149,6 +157,9 @@ underlying HiGHS instance stuck reporting the interrupt on every
 subsequent `solve()` (confirmed against HiGHS 1.15.1; neither clearing
 the callback nor HiGHS' own solver/model reset calls un-stick it).
 Build a new `Solver` via `create_solver` for a clean re-attempt.
+`ScipSolver` doesn't have this problem -- an interrupted instance
+resolves cleanly from scratch on its next `solve()` (confirmed against
+SCIP 8.0.1).
 
 `Solver` also carries coefficient/bound/kind get/set methods that used
 to live on `Model` -- `objective_coefficient`/`set_objective_coefficient`,

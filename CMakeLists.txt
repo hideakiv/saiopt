@@ -39,6 +39,7 @@ option(SAIOPT_BUILD_EXAMPLES "Build saiopt examples" ON)
 option(SAIOPT_BUILD_TESTS "Build saiopt tests" ON)
 option(SAIOPT_WITH_MPI "Build saiopt_mpi, for sending Blocks between processes over MPI" ON)
 option(SAIOPT_WITH_HIGHS "Build saiopt_highs, a Solver backend implemented with HiGHS" ON)
+option(SAIOPT_WITH_SCIP "Build saiopt_scip, a Solver backend implemented with SCIP" ON)
 
 if(SAIOPT_WITH_HIGHS)
   set(FAST_BUILD ON CACHE BOOL "" FORCE)
@@ -65,6 +66,54 @@ if(SAIOPT_WITH_HIGHS)
       ${highs_BINARY_DIR}
   )
   target_link_libraries(saiopt_highs PUBLIC saiopt PRIVATE highs)
+endif()
+
+if(SAIOPT_WITH_SCIP)
+  # SCIP needs an LP solver; SoPlex is scipopt's own (Apache-2.0, like
+  # SCIP itself). Both ship CMakeLists.txt files that predate CMake's
+  # removal of <3.5 policy compatibility, and SCIP unconditionally
+  # requires GMP/PAPILO/ZIMPL unless told otherwise -- none of which
+  # affect saiopt's own build, so these are forced only around fetching
+  # these two dependencies, not globally.
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+  set(GMP off CACHE STRING "" FORCE)
+  set(PAPILO off CACHE STRING "" FORCE)
+  set(ZIMPL off CACHE STRING "" FORCE)
+
+  FetchContent_Declare(
+    soplex
+    GIT_REPOSITORY https://github.com/scipopt/soplex.git
+    GIT_TAG release-701
+    GIT_SHALLOW TRUE
+  )
+  FetchContent_MakeAvailable(soplex)
+
+  # SCIP's own CMakeLists.txt finds SoPlex via find_package(SOPLEX CONFIG),
+  # not add_subdirectory -- point it at the config file SoPlex's build
+  # just generated, rather than requiring a system-wide SoPlex install.
+  set(SOPLEX_DIR ${CMAKE_BINARY_DIR} CACHE PATH "" FORCE)
+
+  FetchContent_Declare(
+    scip
+    GIT_REPOSITORY https://github.com/scipopt/scip.git
+    GIT_TAG v801
+    GIT_SHALLOW TRUE
+  )
+  FetchContent_MakeAvailable(scip)
+
+  # SHARED, not the default library type, so the static initializer that
+  # registers "scip" under saiopt::create_solver (see src/scip_solver.cpp)
+  # is guaranteed to run just by linking this in -- see saiopt_highs above
+  # for why.
+  add_library(saiopt_scip SHARED
+    src/scip_solver.cpp
+  )
+  target_include_directories(saiopt_scip
+    PRIVATE
+      ${scip_SOURCE_DIR}/src
+      ${scip_BINARY_DIR}
+  )
+  target_link_libraries(saiopt_scip PUBLIC saiopt PRIVATE libscip)
 endif()
 
 if(SAIOPT_WITH_MPI)

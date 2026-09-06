@@ -1,4 +1,4 @@
-#include "saiopt/highs_solver.hpp"
+#include "saiopt/solvers/highs_solver.hpp"
 
 #include <interfaces/highs_c_api.h>
 

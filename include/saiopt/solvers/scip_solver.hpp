@@ -65,7 +65,7 @@ public:
 
     void set_progress_callback(ProgressCallback callback) override;
 
-    // Called by the SCIP event handler (src/scip_solver.cpp) -- not part
+    // Called by the SCIP event handler (src/solvers/scip_solver.cpp) -- not part
     // of the Solver interface, and not meant to be called directly, but
     // public for the same reason HighsSolver::invoke_progress_callback
     // is: the handler's callback signature is dictated by SCIP's own

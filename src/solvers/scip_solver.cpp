@@ -1,4 +1,4 @@
-#include "saiopt/scip_solver.hpp"
+#include "saiopt/solvers/scip_solver.hpp"
 
 #include <scip/scip.h>
 #include <scip/scipdefplugins.h>

@@ -71,7 +71,7 @@ public:
     // create_solver for a clean re-attempt.
     void set_progress_callback(ProgressCallback callback) override;
 
-    // Called by the HiGHS callback trampoline (src/highs_solver.cpp) --
+    // Called by the HiGHS callback trampoline (src/solvers/highs_solver.cpp) --
     // not part of the Solver interface, and not meant to be called
     // directly, but the trampoline is a free function (its signature is
     // dictated by HiGHS' C callback type) rather than a member, so this

@@ -53,12 +53,13 @@ if(SAIOPT_WITH_HIGHS)
   FetchContent_MakeAvailable(highs)
 
   # SHARED, not the default library type, so the static initializer that
-  # registers "highs" under saiopt::create_solver (see src/highs_solver.cpp)
-  # is guaranteed to run just by linking this in -- a static archive can
-  # otherwise have its whole-registration translation unit dropped by the
-  # linker since nothing calls into it directly.
+  # registers "highs" under saiopt::create_solver (see
+  # src/solvers/highs_solver.cpp) is guaranteed to run just by linking this
+  # in -- a static archive can otherwise have its whole-registration
+  # translation unit dropped by the linker since nothing calls into it
+  # directly.
   add_library(saiopt_highs SHARED
-    src/highs_solver.cpp
+    src/solvers/highs_solver.cpp
   )
   target_include_directories(saiopt_highs
     PRIVATE
@@ -102,11 +103,11 @@ if(SAIOPT_WITH_SCIP)
   FetchContent_MakeAvailable(scip)
 
   # SHARED, not the default library type, so the static initializer that
-  # registers "scip" under saiopt::create_solver (see src/scip_solver.cpp)
-  # is guaranteed to run just by linking this in -- see saiopt_highs above
-  # for why.
+  # registers "scip" under saiopt::create_solver (see
+  # src/solvers/scip_solver.cpp) is guaranteed to run just by linking this
+  # in -- see saiopt_highs above for why.
   add_library(saiopt_scip SHARED
-    src/scip_solver.cpp
+    src/solvers/scip_solver.cpp
   )
   target_include_directories(saiopt_scip
     PRIVATE

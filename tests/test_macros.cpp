@@ -187,6 +187,74 @@ TEST_CASE("Model::blocks/Block::blocks look up a whole indexed group at once", "
     }
 }
 
+TEST_CASE("index-free vars/constraints/blocks retrieval: untyped and typed", "[macros]") {
+    Model model;
+    std::vector<std::string> items{"a", "b", "c"};
+    SAIOPT_VARS(model, open, items, .kind = VarKind::Binary);
+    SAIOPT_CONSTRAINTS(model, cap, items, ([&](const std::string& k) { return open[k] <= 1.0; }));
+    SAIOPT_BLOCKS(model, region, items, ([](const std::string&) { return Block(); }));
+
+    SECTION("untyped vars(name)/constraints(name)/blocks(name) return every item, in declaration order") {
+        std::vector<Variable> v = model.vars("open");
+        std::vector<ConstraintRef> c = model.constraints("cap");
+        std::vector<Block*> b = model.blocks("region");
+
+        REQUIRE(v.size() == 3);
+        REQUIRE(c.size() == 3);
+        REQUIRE(b.size() == 3);
+        for (std::size_t i = 0; i < items.size(); ++i) {
+            REQUIRE(v[i] == open[items[i]]);
+            REQUIRE(c[i] == cap[items[i]]);
+            REQUIRE(b[i] == &model.block(region[items[i]]));
+        }
+    }
+
+    SECTION("typed vars<K>(name)/constraints<K>(name)/blocks<K>(name) give back real key-based access") {
+        Indexed<std::string, Variable> v = model.vars<std::string>("open");
+        Indexed<std::string, ConstraintRef> c = model.constraints<std::string>("cap");
+        Indexed<std::string, Block*> b = model.blocks<std::string>("region");
+
+        for (const auto& item : items) {
+            REQUIRE(v[item] == open[item]);
+            REQUIRE(c[item] == cap[item]);
+            REQUIRE(b[item] == &model.block(region[item]));
+        }
+    }
+
+    SECTION("works the same way from inside a Block, not just Model's root") {
+        Block block;
+        std::vector<int> lines{10, 20};
+        SAIOPT_VARS(block, y, lines);
+
+        std::vector<Variable> untyped = block.vars("y");
+        REQUIRE(untyped.size() == 2);
+
+        Indexed<int, Variable> typed = block.vars<int>("y");
+        for (int line : lines) REQUIRE(typed[line] == y[line]);
+    }
+
+    SECTION("throws for a name nothing was ever declared under") {
+        REQUIRE_THROWS_AS(model.vars("nope"), std::runtime_error);
+        REQUIRE_THROWS_AS(model.constraints("nope"), std::runtime_error);
+        REQUIRE_THROWS_AS(model.blocks("nope"), std::runtime_error);
+        REQUIRE_THROWS_AS(model.vars<std::string>("nope"), std::runtime_error);
+    }
+
+    SECTION("typed retrieval throws if K doesn't match the declared key type") {
+        REQUIRE_THROWS_AS(model.vars<int>("open"), std::runtime_error);
+    }
+
+    SECTION("reusing a group name (of the same kind) throws") {
+        REQUIRE_THROWS_AS(model.add_vars("open", items, [](const std::string&) { return VariableDef::continuous(); }),
+                           std::runtime_error);
+        REQUIRE_THROWS_AS(
+            model.add_constraints("cap", items, [](const std::string&) { return LinearExpression{} <= 1.0; }),
+            std::runtime_error);
+        REQUIRE_THROWS_AS(model.add_blocks("region", items, [](const std::string&) { return Block(); }),
+                           std::runtime_error);
+    }
+}
+
 TEST_CASE("cross() builds flat multi-dimensional indices for indexed vars", "[macros]") {
     Model model;
     std::vector<std::string> plants{"p1", "p2"};

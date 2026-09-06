@@ -53,10 +53,9 @@
 //                                                                             : VarKind::Continuous; });
 //
 // See saiopt/var_spec.hpp for VarsSpec.
-#define SAIOPT_VARS(block, ident, index, ...)                                                        \
-    [[maybe_unused]] auto ident = (block).add_vars((index), [&](const auto& saiopt_key) {            \
-        return ::saiopt::detail::make_var_def(::saiopt::detail::VarsSpec{__VA_ARGS__}, saiopt_key)   \
-            .name(::saiopt::detail::indexed_name(#ident, saiopt_key));                               \
+#define SAIOPT_VARS(block, ident, index, ...)                                                      \
+    [[maybe_unused]] auto ident = (block).add_vars(#ident, (index), [&](const auto& saiopt_key) {  \
+        return ::saiopt::detail::make_var_def(::saiopt::detail::VarsSpec{__VA_ARGS__}, saiopt_key); \
     })
 
 // The indexed counterpart to SAIOPT_CONSTRAINT: declare one constraint per

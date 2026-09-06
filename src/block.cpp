@@ -61,10 +61,16 @@ std::optional<Variable> Block::var(const std::string& name) const {
     return it->second;
 }
 
+std::vector<Variable> Block::vars(const std::string& name) const { return find_var_group(name).ordered; }
+
 std::optional<ConstraintRef> Block::constraint(const std::string& name) const {
     auto it = constraint_names_.find(name);
     if (it == constraint_names_.end()) return std::nullopt;
     return it->second;
+}
+
+std::vector<ConstraintRef> Block::constraints(const std::string& name) const {
+    return find_constraint_group(name).ordered;
 }
 
 const Block* Block::block(const std::string& name) const {
@@ -77,6 +83,22 @@ Block* Block::block(const std::string& name) {
     auto it = child_names_.find(name);
     if (it == child_names_.end()) return nullptr;
     return &children_[it->second].block;
+}
+
+std::vector<const Block*> Block::blocks(const std::string& name) const {
+    const IndexedBlockGroup& group = find_block_group(name);
+    std::vector<const Block*> result;
+    result.reserve(group.ordered.size());
+    for (BlockRef ref : group.ordered) result.push_back(&block(ref));
+    return result;
+}
+
+std::vector<Block*> Block::blocks(const std::string& name) {
+    const IndexedBlockGroup& group = find_block_group(name);
+    std::vector<Block*> result;
+    result.reserve(group.ordered.size());
+    for (BlockRef ref : group.ordered) result.push_back(&block(ref));
+    return result;
 }
 
 bool Block::find_var_path(const Block& block, Variable var, std::vector<std::uint64_t>& path) {

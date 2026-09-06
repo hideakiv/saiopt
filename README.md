@@ -69,8 +69,16 @@ regions)` and `model.blocks("region", regions)`) looks up a whole
 `SAIOPT_VARS`/`SAIOPT_CONSTRAINTS`/`SAIOPT_BLOCKS`-declared group at once
 (an `Indexed<K, Variable>`/`Indexed<K, ConstraintRef>`/`Indexed<K, Block*>`,
 same shape as `open`/`cap`/`region` themselves), for code that only has
-the `Model`/`Block` and not the original handle those macros returned
-(see `examples/variable_lookup.cpp`). `SAIOPT_OBJECTIVE`
+the `Model`/`Block` and not the original handle those macros returned. A
+declared group is also remembered by name on the `Model`/`Block` itself,
+retrievable without the index at all: `model.vars<std::string>("open")`
+gives back that same `Indexed<K, Variable>` (`K` has to be named
+explicitly -- it can't be deduced from the name alone), while
+`model.vars("open")` gives back a plain `std::vector<Variable>` in
+declaration order, for when even `K` isn't known. Both throw
+`std::runtime_error` for a name nothing was declared under; the typed
+form also throws if `K` doesn't match how the group was actually
+declared (see `examples/variable_lookup.cpp`). `SAIOPT_OBJECTIVE`
 rounds this family out as a thin wrapper around `set_objective` -- there's no
 name to derive there, so it's only for keeping every declaration in a model
 written the same way:

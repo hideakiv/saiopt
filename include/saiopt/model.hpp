@@ -95,6 +95,11 @@ public:
         return root_.add_vars(index, std::forward<DefFn>(def));
     }
 
+    template <typename Range, typename DefFn>
+    auto add_vars(std::string name, const Range& index, DefFn&& def) {
+        return root_.add_vars(std::move(name), index, std::forward<DefFn>(def));
+    }
+
     ConstraintRef add_constraint(std::string name, Constraint constraint) {
         return root_.add_constraint(std::move(name), std::move(constraint));
     }
@@ -148,6 +153,19 @@ public:
         return root_.blocks(name, index);
     }
 
+    // The untyped and typed index-free counterparts to blocks(name,
+    // index) at the model's root -- see Block::blocks.
+    std::vector<const Block*> blocks(const std::string& name) const { return root_.blocks(name); }
+    std::vector<Block*> blocks(const std::string& name) { return root_.blocks(name); }
+    template <typename K>
+    Indexed<K, const Block*> blocks(const std::string& name) const {
+        return root_.blocks<K>(name);
+    }
+    template <typename K>
+    Indexed<K, Block*> blocks(const std::string& name) {
+        return root_.blocks<K>(name);
+    }
+
     // Look up a variable added with .name(name) at the model's root (not
     // inside any attached block).
     std::optional<Variable> var(const std::string& name) const { return root_.var(name); }
@@ -157,6 +175,14 @@ public:
     template <typename Range>
     auto vars(const std::string& name, const Range& index) const {
         return root_.vars(name, index);
+    }
+
+    // The untyped and typed index-free counterparts to vars(name, index)
+    // at the model's root -- see Block::vars.
+    std::vector<Variable> vars(const std::string& name) const { return root_.vars(name); }
+    template <typename K>
+    Indexed<K, Variable> vars(const std::string& name) const {
+        return root_.vars<K>(name);
     }
 
     // Look up a constraint added under `name` at the model's root (not
@@ -171,6 +197,14 @@ public:
     template <typename Range>
     auto constraints(const std::string& name, const Range& index) const {
         return root_.constraints(name, index);
+    }
+
+    // The untyped and typed index-free counterparts to constraints(name,
+    // index) at the model's root -- see Block::constraints.
+    std::vector<ConstraintRef> constraints(const std::string& name) const { return root_.constraints(name); }
+    template <typename K>
+    Indexed<K, ConstraintRef> constraints(const std::string& name) const {
+        return root_.constraints<K>(name);
     }
 
     void set_objective(ObjectiveSense sense, LinearExpression expr) {

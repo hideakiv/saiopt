@@ -1,5 +1,6 @@
 #pragma once
 
+#include <any>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -70,7 +71,10 @@ public:
 
     Variable add_var(VariableDef def);
 
-    // Add one variable per item in `index`, built by `def(k)`.
+    // Add one variable per item in `index`, built by `def(k)`, left
+    // unnamed unless `def` itself calls .name(...) -- e.g. for fully
+    // custom per-item naming, or none at all. Doesn't register a
+    // retrievable group; see the named overload below for that.
     template <typename Range, typename DefFn>
     auto add_vars(const Range& index, DefFn&& def) {
         using K = std::decay_t<decltype(*std::begin(index))>;
@@ -81,22 +85,55 @@ public:
         return Indexed<K, Variable>::from_map(std::move(map));
     }
 
+    // Add one variable per item in `index`, built by `def(k)`, each named
+    // `{name}[{k}]` (see add_constraints for why the group is named) and
+    // remembered as a retrievable group under `name` -- see vars(name)/
+    // vars<K>(name). Throws std::runtime_error if a group of variables
+    // named `name` was already declared in this block.
+    template <typename Range, typename DefFn>
+    auto add_vars(std::string name, const Range& index, DefFn&& def) {
+        using K = std::decay_t<decltype(*std::begin(index))>;
+        if (indexed_var_groups_.count(name)) {
+            throw std::runtime_error("a group of variables named \"" + name + "\" already exists in this block");
+        }
+        std::map<K, Variable> map;
+        std::vector<Variable> ordered;
+        for (const auto& k : index) {
+            Variable v = add_var(def(k).name(detail::indexed_name(name, k)));
+            map.emplace(k, v);
+            ordered.push_back(v);
+        }
+        Indexed<K, Variable> result = Indexed<K, Variable>::from_map(std::move(map));
+        indexed_var_groups_.emplace(std::move(name), IndexedVarGroup{std::move(ordered), std::any(result)});
+        return result;
+    }
+
     ConstraintRef add_constraint(std::string name, Constraint constraint);
 
     // Add one constraint per item in `index`, built by `f(k)`, each named
     // `{name}[{k}]`. `name` disambiguates this whole group from any other
     // add_constraints call in the same block (two calls sharing a prefix
     // and an overlapping index value would otherwise collide, since every
-    // constraint name must be unique within a block).
+    // constraint name must be unique within a block), and is remembered
+    // so the whole group can be retrieved later via constraints(name)/
+    // constraints<K>(name). Throws std::runtime_error if a group of
+    // constraints named `name` was already declared in this block.
     template <typename Range, typename Fn>
     auto add_constraints(std::string name, const Range& index, Fn&& f) {
         using K = std::decay_t<decltype(*std::begin(index))>;
+        if (indexed_constraint_groups_.count(name)) {
+            throw std::runtime_error("a group of constraints named \"" + name + "\" already exists in this block");
+        }
         std::map<K, ConstraintRef> map;
+        std::vector<ConstraintRef> ordered;
         for (const auto& k : index) {
             ConstraintRef ref = add_constraint(detail::indexed_name(name, k), f(k));
             map.emplace(k, ref);
+            ordered.push_back(ref);
         }
-        return Indexed<K, ConstraintRef>::from_map(std::move(map));
+        Indexed<K, ConstraintRef> result = Indexed<K, ConstraintRef>::from_map(std::move(map));
+        indexed_constraint_groups_.emplace(std::move(name), IndexedConstraintGroup{std::move(ordered), std::any(result)});
+        return result;
     }
 
     // Set this block's own local objective contribution. Only meaningful
@@ -124,16 +161,25 @@ public:
 
     // Add one child per item in `index`, built by `f(k)` and scaled by
     // `multiplier(k)`, each named `{name}[{k}]` (see add_constraints for
-    // why the group is named).
+    // why the group is named, and for why this throws on a repeated
+    // `name`). The group is remembered for later retrieval via
+    // blocks(name)/blocks<K>(name).
     template <typename Range, typename Fn, typename MultFn>
     auto add_blocks_scaled(std::string name, const Range& index, Fn&& f, MultFn&& multiplier) {
         using K = std::decay_t<decltype(*std::begin(index))>;
+        if (indexed_block_groups_.count(name)) {
+            throw std::runtime_error("a group of child blocks named \"" + name + "\" already exists in this block");
+        }
         std::map<K, BlockRef> map;
+        std::vector<BlockRef> ordered;
         for (const auto& k : index) {
             BlockRef ref = add_block_scaled(detail::indexed_name(name, k), f(k), multiplier(k));
             map.emplace(k, ref);
+            ordered.push_back(ref);
         }
-        return Indexed<K, BlockRef>::from_map(std::move(map));
+        Indexed<K, BlockRef> result = Indexed<K, BlockRef>::from_map(std::move(map));
+        indexed_block_groups_.emplace(std::move(name), IndexedBlockGroup{std::move(ordered), std::any(result)});
+        return result;
     }
 
     const Block& block(BlockRef ref) const;
@@ -182,6 +228,48 @@ public:
         return Indexed<K, Block*>::from_map(std::move(map));
     }
 
+    // Every child block declared under `name` (via add_blocks/
+    // add_blocks_scaled or their SAIOPT_* macro forms), in declaration
+    // order -- the untyped, index-free counterpart to blocks(name,
+    // index): no index needed, but the result can't be looked up by key.
+    // Throws std::runtime_error if no such group was declared.
+    std::vector<const Block*> blocks(const std::string& name) const;
+    std::vector<Block*> blocks(const std::string& name);
+
+    // The exact Indexed<K, BlockRef> add_blocks[_scaled](name, index, ...)
+    // built when the group named `name` was declared (resolved to
+    // Block*/const Block*, same as blocks(name, index)) -- the typed,
+    // index-free counterpart: no index needed, but `K` must be supplied
+    // explicitly (it can't be deduced from `name` alone), e.g.
+    // `block.blocks<std::string>("region")`. Throws std::runtime_error if
+    // no such group was declared, or if it was declared with a different
+    // key type than `K`.
+    template <typename K>
+    Indexed<K, const Block*> blocks(const std::string& name) const {
+        const IndexedBlockGroup& group = find_block_group(name);
+        const auto* typed = std::any_cast<Indexed<K, BlockRef>>(&group.typed);
+        if (!typed) {
+            throw std::runtime_error("blocks<K>(): the group of child blocks named \"" + name +
+                                      "\" wasn't declared with this key type");
+        }
+        std::map<K, const Block*> resolved;
+        for (const auto& [k, ref] : *typed) resolved.emplace(k, &block(ref));
+        return Indexed<K, const Block*>::from_map(std::move(resolved));
+    }
+
+    template <typename K>
+    Indexed<K, Block*> blocks(const std::string& name) {
+        const IndexedBlockGroup& group = find_block_group(name);
+        const auto* typed = std::any_cast<Indexed<K, BlockRef>>(&group.typed);
+        if (!typed) {
+            throw std::runtime_error("blocks<K>(): the group of child blocks named \"" + name +
+                                      "\" wasn't declared with this key type");
+        }
+        std::map<K, Block*> resolved;
+        for (const auto& [k, ref] : *typed) resolved.emplace(k, &block(ref));
+        return Indexed<K, Block*>::from_map(std::move(resolved));
+    }
+
     // Look up a variable added with .name(name) in *this* block (not its
     // descendants).
     std::optional<Variable> var(const std::string& name) const;
@@ -209,6 +297,31 @@ public:
             map.emplace(k, *v);
         }
         return Indexed<K, Variable>::from_map(std::move(map));
+    }
+
+    // Every variable declared under `name` (via the named add_vars
+    // overload, or SAIOPT_VARS), in declaration order -- the untyped,
+    // index-free counterpart to vars(name, index): no index needed, but
+    // the result can't be looked up by key. Throws std::runtime_error if
+    // no such group was declared.
+    std::vector<Variable> vars(const std::string& name) const;
+
+    // The exact Indexed<K, Variable> add_vars(name, index, def) built
+    // when the group named `name` was declared -- the typed, index-free
+    // counterpart: no index needed, but `K` must be supplied explicitly
+    // (it can't be deduced from `name` alone), e.g.
+    // `block.vars<std::string>("open")`. Throws std::runtime_error if no
+    // such group was declared, or if it was declared with a different
+    // key type than `K`.
+    template <typename K>
+    Indexed<K, Variable> vars(const std::string& name) const {
+        const IndexedVarGroup& group = find_var_group(name);
+        const auto* typed = std::any_cast<Indexed<K, Variable>>(&group.typed);
+        if (!typed) {
+            throw std::runtime_error("vars<K>(): the group of variables named \"" + name +
+                                      "\" wasn't declared with this key type");
+        }
+        return *typed;
     }
 
     // Look up a constraint added under `name` in *this* block (not its
@@ -245,6 +358,31 @@ public:
         return Indexed<K, ConstraintRef>::from_map(std::move(map));
     }
 
+    // Every constraint declared under `name` (via the named
+    // add_constraints, or SAIOPT_CONSTRAINTS), in declaration order --
+    // the untyped, index-free counterpart to constraints(name, index): no
+    // index needed, but the result can't be looked up by key. Throws
+    // std::runtime_error if no such group was declared.
+    std::vector<ConstraintRef> constraints(const std::string& name) const;
+
+    // The exact Indexed<K, ConstraintRef> add_constraints(name, index, f)
+    // built when the group named `name` was declared -- the typed,
+    // index-free counterpart: no index needed, but `K` must be supplied
+    // explicitly (it can't be deduced from `name` alone), e.g.
+    // `block.constraints<std::string>("cap")`. Throws std::runtime_error
+    // if no such group was declared, or if it was declared with a
+    // different key type than `K`.
+    template <typename K>
+    Indexed<K, ConstraintRef> constraints(const std::string& name) const {
+        const IndexedConstraintGroup& group = find_constraint_group(name);
+        const auto* typed = std::any_cast<Indexed<K, ConstraintRef>>(&group.typed);
+        if (!typed) {
+            throw std::runtime_error("constraints<K>(): the group of constraints named \"" + name +
+                                      "\" wasn't declared with this key type");
+        }
+        return *typed;
+    }
+
     // Serialize this block's whole structure -- variables, constraints,
     // objective, and attached children, recursively, all with their names
     // -- to a flat byte buffer. Meant for handing to another process (e.g.
@@ -275,6 +413,45 @@ private:
         Constraint constraint;
     };
 
+    // One indexed group's worth of state, recorded at add_vars(name, ...)
+    // /add_constraints/add_blocks[_scaled] time: `ordered` is every item
+    // in declaration order, type-erased down to the value type V (backs
+    // the untyped vars(name)/constraints(name)/blocks(name)); `typed` is
+    // the exact Indexed<K, V> those calls returned, kept as a std::any
+    // since K varies per group and Block itself isn't templated on it
+    // (backs the typed vars<K>(name)/constraints<K>(name)/blocks<K>(name)).
+    template <typename V>
+    struct IndexedGroup {
+        std::vector<V> ordered;
+        std::any typed;  // Indexed<K, V> for whichever K this group used
+    };
+    using IndexedVarGroup = IndexedGroup<Variable>;
+    using IndexedConstraintGroup = IndexedGroup<ConstraintRef>;
+    using IndexedBlockGroup = IndexedGroup<BlockRef>;
+
+    // `group_kind` is only for the error message (e.g. "variables"); the
+    // three call sites each already know which of the three maps they
+    // mean at compile time.
+    template <typename Group>
+    static const Group& find_indexed_group(const std::unordered_map<std::string, Group>& groups,
+                                            const std::string& name, const char* group_kind) {
+        auto it = groups.find(name);
+        if (it == groups.end()) {
+            throw std::runtime_error("no indexed group of " + std::string(group_kind) + " named \"" + name +
+                                      "\" in this block");
+        }
+        return it->second;
+    }
+    const IndexedVarGroup& find_var_group(const std::string& name) const {
+        return find_indexed_group(indexed_var_groups_, name, "variables");
+    }
+    const IndexedConstraintGroup& find_constraint_group(const std::string& name) const {
+        return find_indexed_group(indexed_constraint_groups_, name, "constraints");
+    }
+    const IndexedBlockGroup& find_block_group(const std::string& name) const {
+        return find_indexed_group(indexed_block_groups_, name, "child blocks");
+    }
+
     // Path (as a sequence of child indices, walked from `block` down) to
     // the descendant (or `block` itself, with an empty path) that owns
     // `var`, appended onto `path`. Returns false, leaving `path`
@@ -294,6 +471,9 @@ private:
     std::unordered_map<std::string, Variable> var_names_;
     std::unordered_map<std::string, ConstraintRef> constraint_names_;
     std::unordered_map<std::string, std::size_t> child_names_;
+    std::unordered_map<std::string, IndexedVarGroup> indexed_var_groups_;
+    std::unordered_map<std::string, IndexedConstraintGroup> indexed_constraint_groups_;
+    std::unordered_map<std::string, IndexedBlockGroup> indexed_block_groups_;
 };
 
 struct ChildBlock {

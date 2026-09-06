@@ -111,6 +111,23 @@ it's cheap to solve the same model repeatedly. None of this needs a
 HiGHS-specific header, so swapping backends never touches `Model` or the
 rest of the modeling code.
 
+An optional third argument passes backend-specific settings, keyed by
+the backend's own option names -- saiopt doesn't interpret them, the
+backend does, so any option its native API supports works without
+saiopt needing to know about it in advance:
+
+```cpp
+auto solver = create_solver(model, "highs",
+    SolverOptions{}.set_double("time_limit", 30.0).set_double("mip_rel_gap", 0.01));
+```
+
+`SolverOptions` has one setter per value type (`set_bool`/`set_int`/
+`set_double`/`set_string`) mirroring HiGHS' own segregated
+option-setting API; passing a name or value a backend rejects throws
+`std::runtime_error` when the `Solver` is constructed. See HiGHS' own
+documentation for its full option list (e.g. `time_limit`,
+`mip_rel_gap`, `presolve`, `threads`, `output_flag`).
+
 `Solver` also carries coefficient/bound/kind get/set methods that used
 to live on `Model` -- `objective_coefficient`/`set_objective_coefficient`,
 `constraint_coefficient`/`set_constraint_coefficient`,

@@ -1,4 +1,5 @@
 #include <cmath>
+#include <stdexcept>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -134,4 +135,31 @@ TEST_CASE("respects integrality on integer variables", "[milp]") {
     REQUIRE(result.objective_coefficient_ranges.empty());
     REQUIRE(result.variable_bound_ranges.empty());
     REQUIRE(result.constraint_bound_ranges.empty());
+}
+
+TEST_CASE("create_solver applies backend-specific options", "[lp]") {
+    Model model;
+    Variable x = model.add_var(VariableDef::continuous().bound(0.0, kInfinity));
+
+    model.set_objective(ObjectiveSense::Minimize, x);
+    model.add_constraint("cap", x >= 5.0);
+
+    SECTION("a recognized HiGHS option is applied and solving still succeeds") {
+        auto solver = create_solver(
+            model, "highs", SolverOptions{}.set_double("mip_rel_gap", 0.01).set_bool("output_flag", false));
+        SolveResult result = solver->solve();
+        REQUIRE(result.optimal);
+        REQUIRE(result.value(x) == Approx(5.0));
+    }
+
+    SECTION("an unrecognized option name throws") {
+        REQUIRE_THROWS_AS(
+            create_solver(model, "highs", SolverOptions{}.set_bool("not_a_real_option", true)),
+            std::runtime_error);
+    }
+
+    SECTION("an invalid value for a recognized option throws") {
+        REQUIRE_THROWS_AS(create_solver(model, "highs", SolverOptions{}.set_double("mip_rel_gap", -5.0)),
+                           std::runtime_error);
+    }
 }

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 
@@ -11,6 +13,52 @@ namespace saiopt {
 
 class Model;
 struct SolveResult;
+
+// Backend-specific settings to apply when constructing a Solver, keyed
+// by name (e.g. HiGHS's own option names, like "time_limit" or
+// "mip_rel_gap") -- saiopt doesn't interpret these itself, a backend
+// does, so any option a backend's own native API supports can be set
+// here without saiopt needing to know about it in advance. Separate
+// setters per value type (rather than one overloaded/variant-typed
+// `set`) mirror HiGHS' own segregated option-setting API and sidestep
+// the bool/integer overload-resolution ambiguity a single `set` would
+// invite. Passing an option a backend doesn't recognize, or a value it
+// rejects, throws std::runtime_error when the Solver is constructed --
+// see the individual backend for exactly which options it supports.
+class SolverOptions {
+public:
+    SolverOptions() = default;
+
+    SolverOptions& set_bool(std::string key, bool value) {
+        bool_options_[std::move(key)] = value;
+        return *this;
+    }
+    SolverOptions& set_int(std::string key, std::int64_t value) {
+        int_options_[std::move(key)] = value;
+        return *this;
+    }
+    SolverOptions& set_double(std::string key, double value) {
+        double_options_[std::move(key)] = value;
+        return *this;
+    }
+    SolverOptions& set_string(std::string key, std::string value) {
+        string_options_[std::move(key)] = std::move(value);
+        return *this;
+    }
+
+    const std::map<std::string, bool>& bool_options() const noexcept { return bool_options_; }
+    const std::map<std::string, std::int64_t>& int_options() const noexcept { return int_options_; }
+    const std::map<std::string, double>& double_options() const noexcept { return double_options_; }
+    const std::map<std::string, std::string>& string_options() const noexcept {
+        return string_options_;
+    }
+
+private:
+    std::map<std::string, bool> bool_options_;
+    std::map<std::string, std::int64_t> int_options_;
+    std::map<std::string, double> double_options_;
+    std::map<std::string, std::string> string_options_;
+};
 
 // A solver instance bound to one Model. Constructing a concrete
 // implementation (e.g. HighsSolver) translates that Model into the
@@ -60,7 +108,7 @@ public:
 
 // A backend's constructor, wrapped so it can be looked up by name. See
 // SolverRegistration.
-using SolverFactory = std::function<std::unique_ptr<Solver>(const Model&)>;
+using SolverFactory = std::function<std::unique_ptr<Solver>(const Model&, const SolverOptions&)>;
 
 // Registers `factory` under `name` for later lookup by create_solver.
 // Most code shouldn't call this directly -- see SolverRegistration below.
@@ -71,8 +119,8 @@ void register_solver(std::string name, SolverFactory factory);
 // just by being linked in -- e.g., in that backend's own .cpp file:
 //
 //   namespace {
-//   SolverRegistration registration{"highs", [](const Model& model) {
-//       return std::make_unique<HighsSolver>(model);
+//   SolverRegistration registration{"highs", [](const Model& model, const SolverOptions& options) {
+//       return std::make_unique<HighsSolver>(model, options);
 //   }};
 //   }
 struct SolverRegistration {
@@ -81,8 +129,14 @@ struct SolverRegistration {
 
 // Builds a Solver for `model` using the backend registered under
 // `solver_name` (e.g. "highs", registered by saiopt_highs when it's
-// linked in). Throws std::runtime_error if no backend is registered
-// under that name.
-std::unique_ptr<Solver> create_solver(const Model& model, const std::string& solver_name);
+// linked in), applying `options` (see SolverOptions), e.g.:
+//
+//   auto solver = create_solver(model, "highs",
+//       SolverOptions{}.set_double("time_limit", 30.0).set_bool("output_flag", true));
+//
+// Throws std::runtime_error if no backend is registered under that name,
+// or if the backend rejects one of `options`.
+std::unique_ptr<Solver> create_solver(const Model& model, const std::string& solver_name,
+                                       const SolverOptions& options = SolverOptions{});
 
 }  // namespace saiopt

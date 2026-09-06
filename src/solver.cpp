@@ -25,12 +25,13 @@ SolverRegistration::SolverRegistration(std::string name, SolverFactory factory) 
     register_solver(std::move(name), std::move(factory));
 }
 
-std::unique_ptr<Solver> create_solver(const Model& model, const std::string& solver_name) {
+std::unique_ptr<Solver> create_solver(const Model& model, const std::string& solver_name,
+                                       const SolverOptions& options) {
     auto it = registry().find(solver_name);
     if (it == registry().end()) {
         throw std::runtime_error("no solver registered under name '" + solver_name + "'");
     }
-    return it->second(model);
+    return it->second(model, options);
 }
 
 }  // namespace saiopt

@@ -23,9 +23,14 @@ namespace saiopt {
 class HighsSolver : public Solver {
 public:
     // Throws std::runtime_error if `model` has no objective, references
-    // an out-of-scope variable (see flatten()), or HiGHS otherwise
-    // rejects the flattened LP.
-    explicit HighsSolver(const Model& model);
+    // an out-of-scope variable (see flatten()), HiGHS otherwise rejects
+    // the flattened LP, or `options` sets a name HiGHS doesn't recognize
+    // or a value it rejects. `options`' keys are HiGHS' own option
+    // names (e.g. "time_limit", "mip_rel_gap", "presolve", "threads") --
+    // see HiGHS' own documentation for the full list -- applied after
+    // saiopt's own default of suppressing solve output ("output_flag"),
+    // so an explicit output_flag in `options` overrides that default.
+    explicit HighsSolver(const Model& model, const SolverOptions& options = SolverOptions{});
 
     HighsSolver(HighsSolver&& other) noexcept;
     HighsSolver& operator=(HighsSolver&& other) noexcept;

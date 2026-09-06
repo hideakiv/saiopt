@@ -35,31 +35,63 @@ HighsInt to_highs_integrality(VarKind kind) {
     return kind == VarKind::Continuous ? kHighsVarTypeContinuous : kHighsVarTypeInteger;
 }
 
+void check_option_status(HighsInt status, const std::string& key) {
+    if (status != kHighsStatusOk) {
+        throw std::runtime_error("HiGHS rejected option \"" + key + "\"");
+    }
+}
+
+// Applies every option in `options` to `highs` via HiGHS' own (segregated
+// by type) option-setting API, throwing if HiGHS rejects any of them --
+// an unrecognized name or an invalid value for a recognized one.
+void apply_options(void* highs, const SolverOptions& options) {
+    for (const auto& [key, value] : options.bool_options()) {
+        check_option_status(Highs_setBoolOptionValue(highs, key.c_str(), value ? 1 : 0), key);
+    }
+    for (const auto& [key, value] : options.int_options()) {
+        check_option_status(Highs_setIntOptionValue(highs, key.c_str(), static_cast<HighsInt>(value)),
+                             key);
+    }
+    for (const auto& [key, value] : options.double_options()) {
+        check_option_status(Highs_setDoubleOptionValue(highs, key.c_str(), value), key);
+    }
+    for (const auto& [key, value] : options.string_options()) {
+        check_option_status(Highs_setStringOptionValue(highs, key.c_str(), value.c_str()), key);
+    }
+}
+
 }  // namespace
 
-HighsSolver::HighsSolver(const Model& model) : lp_(flatten(model)) {
+HighsSolver::HighsSolver(const Model& model, const SolverOptions& options) : lp_(flatten(model)) {
     highs_ = Highs_create();
-    Highs_setBoolOptionValue(highs_, "output_flag", 0);
+    try {
+        Highs_setBoolOptionValue(highs_, "output_flag", 0);
+        apply_options(highs_, options);
 
-    std::vector<HighsInt> a_start = to_highs_int(lp_.a_start);
-    std::vector<HighsInt> a_index = to_highs_int(lp_.a_index);
+        std::vector<HighsInt> a_start = to_highs_int(lp_.a_start);
+        std::vector<HighsInt> a_index = to_highs_int(lp_.a_index);
 
-    HighsInt status = Highs_passLp(
-        highs_, static_cast<HighsInt>(lp_.num_col), static_cast<HighsInt>(lp_.num_row),
-        static_cast<HighsInt>(lp_.a_value.size()), kHighsMatrixFormatColwise, lp_.sense, lp_.offset,
-        lp_.col_cost.data(), lp_.col_lower.data(), lp_.col_upper.data(), lp_.row_lower.data(),
-        lp_.row_upper.data(), a_start.data(), a_index.data(), lp_.a_value.data());
+        HighsInt status = Highs_passLp(
+            highs_, static_cast<HighsInt>(lp_.num_col), static_cast<HighsInt>(lp_.num_row),
+            static_cast<HighsInt>(lp_.a_value.size()), kHighsMatrixFormatColwise, lp_.sense,
+            lp_.offset, lp_.col_cost.data(), lp_.col_lower.data(), lp_.col_upper.data(),
+            lp_.row_lower.data(), lp_.row_upper.data(), a_start.data(), a_index.data(),
+            lp_.a_value.data());
 
-    if (status != 0) {
-        Highs_destroy(highs_);
-        highs_ = nullptr;
-        throw std::runtime_error("HiGHS rejected the model (Highs_passLp failed)");
-    }
-
-    for (std::size_t i = 0; i < lp_.col_kind.size(); ++i) {
-        if (lp_.col_kind[i] != VarKind::Continuous) {
-            Highs_changeColIntegrality(highs_, static_cast<HighsInt>(i), kHighsVarTypeInteger);
+        if (status != 0) {
+            throw std::runtime_error("HiGHS rejected the model (Highs_passLp failed)");
         }
+
+        for (std::size_t i = 0; i < lp_.col_kind.size(); ++i) {
+            if (lp_.col_kind[i] != VarKind::Continuous) {
+                Highs_changeColIntegrality(highs_, static_cast<HighsInt>(i), kHighsVarTypeInteger);
+            }
+        }
+    } catch (...) {
+        // A throwing constructor's destructor never runs, so highs_ would
+        // otherwise leak here -- clean it up ourselves before propagating.
+        Highs_destroy(highs_);
+        throw;
     }
 
     for (std::size_t i = 0; i < lp_.col_variable.size(); ++i) {
@@ -261,8 +293,9 @@ void HighsSolver::set_variable_kind(Variable var, VarKind kind) {
 
 namespace {
 
-SolverRegistration highs_registration{
-    "highs", [](const Model& model) { return std::make_unique<HighsSolver>(model); }};
+SolverRegistration highs_registration{"highs", [](const Model& model, const SolverOptions& options) {
+                                           return std::make_unique<HighsSolver>(model, options);
+                                       }};
 
 }  // namespace
 

@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -79,20 +80,40 @@ TEST_CASE("print labels nested-block variables by their qualified path", "[block
     std::string text = out.str();
 
     REQUIRE(text.find("model (minimize)") != std::string::npos);
-    REQUIRE(text.find("objective: x + 3 * (2 sub.y)") != std::string::npos);
+    REQUIRE(text.find("objective:\n  x + 3 sub.(\n    2 y\n  )\n") != std::string::npos);
     REQUIRE(text.find("min_total: sub.y + x >= 5") != std::string::npos);
     REQUIRE(text.find("block sub:") != std::string::npos);
     REQUIRE(text.find("y_upper: sub.y <= 4") != std::string::npos);
 }
 
-TEST_CASE("print folds nested objectives with the right sign and multiplier", "[block]") {
-    auto objective_line = [](const Model& model) {
+TEST_CASE("print folds nested objectives with the right sign, multiplier, and indentation", "[block]") {
+    // Returns the objective section's own lines (the "objective:" header
+    // itself dropped, and each line's two-space base indent stripped back
+    // off) joined by "\n", so a nested case's expected shape can be
+    // written the same way format_total_objective_lines itself builds it,
+    // just with its own indent-2 base indent removed.
+    auto objective_block = [](const Model& model) {
         std::ostringstream out;
         model.print(out);
-        std::string text = out.str();
-        auto start = text.find("objective: ");
-        auto end = text.find('\n', start);
-        return text.substr(start, end - start);
+        std::istringstream in(out.str());
+        std::string line;
+        std::vector<std::string> lines;
+        bool collecting = false;
+        while (std::getline(in, line)) {
+            if (line == "objective:") {
+                collecting = true;
+                continue;
+            }
+            if (!collecting) continue;
+            if (line.rfind("  ", 0) != 0) break;  // first non-indented line ends the section
+            lines.push_back(line.substr(2));
+        }
+        std::string joined;
+        for (std::size_t i = 0; i < lines.size(); ++i) {
+            if (i) joined += "\n";
+            joined += lines[i];
+        }
+        return joined;
     };
 
     SECTION("a multiplier of exactly 1 gets no numeric prefix") {
@@ -104,7 +125,7 @@ TEST_CASE("print folds nested objectives with the right sign and multiplier", "[
         model.add_block_scaled("sub", std::move(child), 1.0);
         model.set_objective(ObjectiveSense::Minimize, x);
 
-        REQUIRE(objective_line(model) == "objective: x + (sub.y)");
+        REQUIRE(objective_block(model) == "x + sub.(\n  y\n)");
     }
 
     SECTION("a negative multiplier subtracts instead of adding") {
@@ -116,10 +137,10 @@ TEST_CASE("print folds nested objectives with the right sign and multiplier", "[
         model.add_block_scaled("sub", std::move(child), -2.0);
         model.set_objective(ObjectiveSense::Minimize, x);
 
-        REQUIRE(objective_line(model) == "objective: x - 2 * (sub.y)");
+        REQUIRE(objective_block(model) == "x - 2 sub.(\n  y\n)");
     }
 
-    SECTION("an empty intermediate block contributes no stray term") {
+    SECTION("an empty intermediate block contributes no stray parentheses") {
         Model model;
         Variable x = model.add_var(VariableDef::continuous().name("x"));
 
@@ -133,7 +154,7 @@ TEST_CASE("print folds nested objectives with the right sign and multiplier", "[
         model.add_block_scaled("sub", std::move(child), 2.0);
         model.set_objective(ObjectiveSense::Minimize, x);
 
-        REQUIRE(objective_line(model) == "objective: x + 2 * (5 * (sub.gc.z))");
+        REQUIRE(objective_block(model) == "x + 2 sub.(\n  5 gc.(\n    z\n  )\n)");
     }
 
     SECTION("no objective anywhere falls back to 0") {
@@ -141,7 +162,26 @@ TEST_CASE("print folds nested objectives with the right sign and multiplier", "[
         model.add_var(VariableDef::continuous().name("x"));
         model.set_objective(ObjectiveSense::Minimize, LinearExpression{});
 
-        REQUIRE(objective_line(model) == "objective: 0");
+        REQUIRE(objective_block(model) == "0");
+    }
+
+    SECTION("a sibling term shares a line with the previous one's close paren") {
+        Model model;
+        Variable x = model.add_var(VariableDef::continuous().name("x"));
+
+        Block p;
+        Variable u = p.add_var(VariableDef::continuous().name("u"));
+        p.set_objective(u);
+        model.add_block("p", std::move(p));  // default multiplier 1
+
+        Block q;
+        Variable w = q.add_var(VariableDef::continuous().name("w"));
+        q.set_objective(w);
+        model.add_block_scaled("q", std::move(q), -3.0);
+
+        model.set_objective(ObjectiveSense::Minimize, x);
+
+        REQUIRE(objective_block(model) == "x + p.(\n  u\n) - 3 q.(\n  w\n)");
     }
 }
 

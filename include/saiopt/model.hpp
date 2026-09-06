@@ -154,13 +154,44 @@ public:
     // Print a human-readable summary of the model to `os`: its objective
     // sense, the effective total objective (every block's own
     // contribution, folded together and scaled by the multiplier it was
-    // attached with, e.g. "x + 3 * (2 sub.y)" for a block "sub" attached
-    // with add_block_scaled(..., 3.0) -- this is what the solver actually
-    // sees, not each block's own unscaled local objective), and every
-    // block's variables and constraints, with child blocks indented under
-    // their parent. A variable's label is its own name if it has one
-    // (qualified by its block's path, e.g. "sub.y" for a name set inside
-    // a block added under "sub"), or "#<index>" if unnamed.
+    // attached with -- this is what the solver actually sees, not each
+    // block's own unscaled local objective), and every block's variables
+    // and constraints, with child blocks indented under their parent.
+    //
+    // The objective is printed as an indented, parenthesized outline
+    // rather than one long inline expression, so it stays legible no
+    // matter how many levels deep the nesting goes: a child block's
+    // contribution opens with "name.(" (its multiplier first, when that
+    // isn't 1, written the same way a coefficient is -- "2 a.(", not
+    // "2 * a.("), continuing whatever line was already open rather than
+    // starting a new one; its own folded objective follows indented two
+    // spaces further; and a closing ")" begins a new line back at the
+    // opening line's own indent, which the *next* sibling term (if any)
+    // then continues, e.g.
+    //
+    //   objective:
+    //     x + 3 sub1.(
+    //       y + 2 a.(
+    //         v
+    //       ) - b.(
+    //         2 v
+    //       )
+    //     ) + sub2.(
+    //       3 y
+    //     )
+    //
+    // for a block "sub1" (multiplier 3) containing its own term "y" plus
+    // two children "a" (multiplier 2) and "b" (multiplier -1), and a
+    // sibling block "sub2" (multiplier 1, so no numeric prefix) directly
+    // under the root. Variables inside a block's parentheses are named
+    // relative to that block (just "y", not "sub1.y"), since the
+    // "sub1." is already spelled out once, on the opening parenthesis.
+    //
+    // Elsewhere (variable listings and constraints, which can span
+    // several blocks in one expression) a variable's label is its own
+    // name if it has one, qualified by its block's full path (e.g.
+    // "sub.y" for a name set inside a block added under "sub"), or
+    // "#<index>" if unnamed.
     void print(std::ostream& os) const;
 
     // Convenience overload, printing to std::cout.
@@ -175,12 +206,27 @@ private:
                              const std::unordered_map<Variable, std::string>& labels, int depth);
 
     // The effective total objective contributed by `block` and its whole
-    // subtree: `block`'s own local objective, plus each child's own
-    // result of this same call, wrapped in parentheses and prefixed by
-    // its multiplier when that isn't 1 -- see print()'s doc comment for
-    // the exact shape.
-    static std::string format_total_objective(const Block& block,
-                                               const std::unordered_map<Variable, std::string>& labels);
+    // subtree, as already-indented lines (absolute indentation -- each
+    // line is ready to print as-is, already prefixed with `indent`
+    // spaces, or more for anything nested deeper): `block`'s own local
+    // objective (its variables named relative to `block` itself, via
+    // `prefix`) comes first if it has one, followed by one open-paren/
+    // close-paren pair per child with a non-empty contribution, each
+    // wrapping that child's own lines indented two spaces deeper. A term
+    // that doesn't itself open a nested scope shares a line with
+    // whatever came before it (the block's own local objective, or the
+    // previous child's close paren); one that does always ends the
+    // current line at its open paren and begins a new one at its close --
+    // see print()'s doc comment for the exact shape. Empty (no local
+    // objective, no non-empty children) returns an empty vector rather
+    // than a "0" placeholder, so a contributing-nothing child can be told
+    // apart from one that isn't and skipped with no stray parentheses.
+    // `prefix` is `block`'s own fully qualified path from the model root
+    // (e.g. "sub.gc"), used to turn a variable's globally qualified label
+    // back into one relative to `block`.
+    static std::vector<std::string> format_total_objective_lines(const Block& block,
+                                                                   const std::unordered_map<Variable, std::string>& labels,
+                                                                   const std::string& prefix, int indent);
 
     Block root_;
     std::optional<ObjectiveSense> sense_;

@@ -41,6 +41,21 @@ std::string label_of(const std::unordered_map<Variable, std::string>& labels, Va
     return it != labels.end() ? it->second : fallback_label(var);
 }
 
+// `var`'s globally qualified label (e.g. "sub.gc.z"), relative to
+// `prefix` (e.g. "sub" -> "gc.z"). A label that isn't actually under
+// `prefix` (a variable from outside the block whose objective is being
+// formatted -- structurally possible, though flatten() rejects it at
+// solve time) is returned unchanged rather than mangled.
+std::string relative_label(const std::unordered_map<Variable, std::string>& labels, Variable var,
+                            const std::string& prefix) {
+    std::string full = label_of(labels, var);
+    if (!prefix.empty() && full.size() > prefix.size() && full.compare(0, prefix.size(), prefix) == 0 &&
+        full[prefix.size()] == '.') {
+        return full.substr(prefix.size() + 1);
+    }
+    return full;
+}
+
 std::string format_expression(const LinearExpression& expr,
                                const std::unordered_map<Variable, std::string>& labels) {
     std::vector<std::pair<std::string, double>> terms;
@@ -77,6 +92,19 @@ std::string format_expression(const LinearExpression& expr,
     return oss.str();
 }
 
+// Same as format_expression, but each variable is named relative to
+// `prefix` instead of by its globally qualified label -- see
+// relative_label above.
+std::string format_expression_relative(const LinearExpression& expr,
+                                        const std::unordered_map<Variable, std::string>& labels,
+                                        const std::string& prefix) {
+    std::unordered_map<Variable, std::string> relative;
+    for (const auto& [var, coeff] : expr.terms()) {
+        relative.emplace(var, relative_label(labels, var, prefix));
+    }
+    return format_expression(expr, relative);
+}
+
 std::string format_constraint(const Constraint& c,
                                const std::unordered_map<Variable, std::string>& labels) {
     std::string expr = format_expression(c.expression(), labels);
@@ -92,32 +120,6 @@ std::string format_constraint(const Constraint& c,
     return expr;
 }
 
-// A signed term of the effective total objective: `text` is a single
-// block's own local objective, or a whole already-joined child
-// subtree's contribution wrapped/scaled to reflect its multiplier.
-struct ObjectiveTerm {
-    std::string text;  // magnitude only, no leading sign
-    bool negative;
-};
-
-// Joins signed terms into one "a - b + c" string, the same way
-// format_expression joins a LinearExpression's own terms.
-std::string join_objective_terms(const std::vector<ObjectiveTerm>& terms) {
-    if (terms.empty()) return "0";
-    std::ostringstream oss;
-    bool first = true;
-    for (const auto& term : terms) {
-        if (first) {
-            if (term.negative) oss << "-";
-        } else {
-            oss << (term.negative ? " - " : " + ");
-        }
-        oss << term.text;
-        first = false;
-    }
-    return oss.str();
-}
-
 }  // namespace
 
 void Model::collect_labels(const Block& block, const std::string& prefix,
@@ -131,23 +133,79 @@ void Model::collect_labels(const Block& block, const std::string& prefix,
     }
 }
 
-std::string Model::format_total_objective(const Block& block,
-                                           const std::unordered_map<Variable, std::string>& labels) {
-    std::vector<ObjectiveTerm> terms;
-    if (!block.objective_.terms().empty() || block.objective_.constant() != 0.0) {
-        terms.push_back({format_expression(block.objective_, labels), false});
-    }
-    for (const auto& child : block.children_) {
-        std::string child_total = format_total_objective(child.block, labels);
-        if (child_total == "0") continue;
+std::vector<std::string> Model::format_total_objective_lines(const Block& block,
+                                                               const std::unordered_map<Variable, std::string>& labels,
+                                                               const std::string& prefix, int indent) {
+    std::vector<std::string> lines;
+    std::string buffer;        // the line being built, without its indent prefix
+    bool buffer_started = false;
+    bool first = true;
 
-        double magnitude = std::abs(child.multiplier);
-        std::ostringstream term;
-        if (magnitude != 1.0) term << magnitude << " * ";
-        term << "(" << child_total << ")";
-        terms.push_back({term.str(), child.multiplier < 0.0});
+    // The sign the next appended piece starts with: nothing for a
+    // positive first term, "-" for a negative first term (both with no
+    // trailing space, matching format_expression's own "-x" style), " + "
+    // or " - " to join every term after that -- whether that next piece
+    // continues the current line or starts a fresh one.
+    auto sign = [&](bool negative) {
+        std::string s = first ? (negative ? "-" : "") : (negative ? " - " : " + ");
+        first = false;
+        return s;
+    };
+    auto append = [&](const std::string& text) {
+        buffer += text;
+        buffer_started = true;
+    };
+    auto flush = [&]() {
+        if (buffer_started) {
+            lines.push_back(std::string(static_cast<std::size_t>(indent), ' ') + buffer);
+            buffer.clear();
+            buffer_started = false;
+        }
+    };
+
+    if (!block.objective_.terms().empty() || block.objective_.constant() != 0.0) {
+        append(sign(false) + format_expression_relative(block.objective_, labels, prefix));
     }
-    return join_objective_terms(terms);
+
+    std::vector<std::string> child_names(block.children_.size());
+    for (const auto& [name, index] : block.child_names_) child_names[index] = name;
+
+    for (std::size_t i = 0; i < block.children_.size(); ++i) {
+        const ChildBlock& child = block.children_[i];
+        const std::string& child_name = child_names[i];
+        std::string child_prefix = prefix.empty() ? child_name : prefix + "." + child_name;
+        std::vector<std::string> child_lines =
+            format_total_objective_lines(child.block, labels, child_prefix, indent + 2);
+        if (child_lines.empty()) continue;  // this child contributes nothing -- no stray parentheses for it
+
+        // "name.(" (with its sign and multiplier) finishes whatever line
+        // is already in progress -- the block's own local objective, or a
+        // still-pending close paren from the previous child -- rather
+        // than starting a new one, so two terms that don't themselves
+        // need a line break share one, the way "y + 2 a.(" or ") - b.("
+        // do below. The multiplier, when not 1, is written the same way
+        // format_expression writes a coefficient ("2 a.(", not
+        // "2 * a.("), for the same reason: "a" already reads as a single
+        // term being scaled, the same as any variable would.
+        double magnitude = std::abs(child.multiplier);
+        std::ostringstream head;
+        head << sign(child.multiplier < 0.0);
+        if (magnitude != 1.0) head << magnitude << " ";
+        head << child_name << ".(";
+        append(head.str());
+        flush();
+
+        for (const auto& line : child_lines) lines.push_back(line);
+
+        // The close paren starts a new line at this block's own indent
+        // (child_lines is already indented one level deeper than that) --
+        // left pending rather than flushed immediately, so the next
+        // sibling's term (if any) is appended right after it instead of
+        // getting a line of its own.
+        append(")");
+    }
+    flush();
+    return lines;
 }
 
 void Model::print_block(std::ostream& os, const Block& block,
@@ -200,7 +258,11 @@ void Model::print(std::ostream& os) const {
        << (sense_ ? (*sense_ == ObjectiveSense::Minimize ? "minimize" : "maximize")
                   : "no objective")
        << ")\n";
-    os << "objective: " << format_total_objective(root_, labels) << "\n";
+    std::vector<std::string> objective_lines = format_total_objective_lines(root_, labels, "", 2);
+    if (objective_lines.empty()) objective_lines.push_back("  0");
+    os << "objective:\n";
+    for (const auto& line : objective_lines) os << line << "\n";
+
     print_block(os, root_, labels, 0);
 }
 

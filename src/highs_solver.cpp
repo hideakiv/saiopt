@@ -3,6 +3,7 @@
 #include <interfaces/highs_c_api.h>
 
 #include <algorithm>
+#include <iterator>
 #include <memory>
 #include <stdexcept>
 #include <utility>
@@ -25,6 +26,13 @@ std::vector<HighsInt> to_highs_int(const std::vector<std::int64_t>& values) {
 bool is_pure_lp(const SparseLp& lp) {
     return std::all_of(lp.col_kind.begin(), lp.col_kind.end(),
                         [](VarKind kind) { return kind == VarKind::Continuous; });
+}
+
+// HiGHS has no separate "binary" integrality -- a binary variable is just
+// an integer one with [0, 1] bounds, so saiopt's own VarKind (which does
+// distinguish them, for lp_.col_kind and is_pure_lp) collapses to this.
+HighsInt to_highs_integrality(VarKind kind) {
+    return kind == VarKind::Continuous ? kHighsVarTypeContinuous : kHighsVarTypeInteger;
 }
 
 }  // namespace
@@ -53,10 +61,21 @@ HighsSolver::HighsSolver(const Model& model) : lp_(flatten(model)) {
             Highs_changeColIntegrality(highs_, static_cast<HighsInt>(i), kHighsVarTypeInteger);
         }
     }
+
+    for (std::size_t i = 0; i < lp_.col_variable.size(); ++i) {
+        var_column_.emplace(lp_.col_variable[i], static_cast<std::int64_t>(i));
+    }
+    for (std::size_t i = 0; i < lp_.row_constraint.size(); ++i) {
+        constraint_row_.emplace(lp_.row_constraint[i], static_cast<std::int64_t>(i));
+    }
 }
 
 HighsSolver::HighsSolver(HighsSolver&& other) noexcept
-    : highs_(other.highs_), lp_(std::move(other.lp_)) {
+    : highs_(other.highs_),
+      lp_(std::move(other.lp_)),
+      var_column_(std::move(other.var_column_)),
+      constraint_row_(std::move(other.constraint_row_)),
+      coefficient_overrides_(std::move(other.coefficient_overrides_)) {
     other.highs_ = nullptr;
 }
 
@@ -65,6 +84,9 @@ HighsSolver& HighsSolver::operator=(HighsSolver&& other) noexcept {
         if (highs_) Highs_destroy(highs_);
         highs_ = other.highs_;
         lp_ = std::move(other.lp_);
+        var_column_ = std::move(other.var_column_);
+        constraint_row_ = std::move(other.constraint_row_);
+        coefficient_overrides_ = std::move(other.coefficient_overrides_);
         other.highs_ = nullptr;
     }
     return *this;
@@ -132,6 +154,109 @@ SolveResult HighsSolver::solve() {
     }
 
     return result;
+}
+
+std::int64_t HighsSolver::column_of(Variable var) const {
+    auto it = var_column_.find(var);
+    if (it == var_column_.end()) {
+        throw std::runtime_error("variable does not belong to the model this Solver was built from");
+    }
+    return it->second;
+}
+
+std::int64_t HighsSolver::row_of(ConstraintRef cref) const {
+    auto it = constraint_row_.find(cref);
+    if (it == constraint_row_.end()) {
+        throw std::runtime_error("constraint does not belong to the model this Solver was built from");
+    }
+    return it->second;
+}
+
+double HighsSolver::flattened_coefficient(std::int64_t row, std::int64_t col) const {
+    auto begin = lp_.a_index.begin() + lp_.a_start[static_cast<std::size_t>(col)];
+    auto end = lp_.a_index.begin() + lp_.a_start[static_cast<std::size_t>(col) + 1];
+    auto it = std::lower_bound(begin, end, row);
+    if (it == end || *it != row) return 0.0;
+    return lp_.a_value[static_cast<std::size_t>(std::distance(lp_.a_index.begin(), it))];
+}
+
+double HighsSolver::objective_coefficient(Variable var) const {
+    return lp_.col_cost[static_cast<std::size_t>(column_of(var))];
+}
+
+void HighsSolver::set_objective_coefficient(Variable var, double coeff) {
+    std::int64_t col = column_of(var);
+    Highs_changeColCost(highs_, static_cast<HighsInt>(col), coeff);
+    lp_.col_cost[static_cast<std::size_t>(col)] = coeff;
+}
+
+double HighsSolver::constraint_coefficient(ConstraintRef cref, Variable var) const {
+    std::int64_t row = row_of(cref);
+    std::int64_t col = column_of(var);
+    auto it = coefficient_overrides_.find({row, col});
+    if (it != coefficient_overrides_.end()) return it->second;
+    return flattened_coefficient(row, col);
+}
+
+void HighsSolver::set_constraint_coefficient(ConstraintRef cref, Variable var, double coeff) {
+    std::int64_t row = row_of(cref);
+    std::int64_t col = column_of(var);
+    Highs_changeCoeff(highs_, static_cast<HighsInt>(row), static_cast<HighsInt>(col), coeff);
+    coefficient_overrides_[{row, col}] = coeff;
+}
+
+double HighsSolver::constraint_lower(ConstraintRef cref) const {
+    return lp_.row_lower[static_cast<std::size_t>(row_of(cref))];
+}
+
+void HighsSolver::set_constraint_lower(ConstraintRef cref, double lower) {
+    std::int64_t row = row_of(cref);
+    Highs_changeRowBounds(highs_, static_cast<HighsInt>(row), lower,
+                           lp_.row_upper[static_cast<std::size_t>(row)]);
+    lp_.row_lower[static_cast<std::size_t>(row)] = lower;
+}
+
+double HighsSolver::constraint_upper(ConstraintRef cref) const {
+    return lp_.row_upper[static_cast<std::size_t>(row_of(cref))];
+}
+
+void HighsSolver::set_constraint_upper(ConstraintRef cref, double upper) {
+    std::int64_t row = row_of(cref);
+    Highs_changeRowBounds(highs_, static_cast<HighsInt>(row),
+                           lp_.row_lower[static_cast<std::size_t>(row)], upper);
+    lp_.row_upper[static_cast<std::size_t>(row)] = upper;
+}
+
+double HighsSolver::variable_lower(Variable var) const {
+    return lp_.col_lower[static_cast<std::size_t>(column_of(var))];
+}
+
+void HighsSolver::set_variable_lower(Variable var, double lower) {
+    std::int64_t col = column_of(var);
+    Highs_changeColBounds(highs_, static_cast<HighsInt>(col), lower,
+                           lp_.col_upper[static_cast<std::size_t>(col)]);
+    lp_.col_lower[static_cast<std::size_t>(col)] = lower;
+}
+
+double HighsSolver::variable_upper(Variable var) const {
+    return lp_.col_upper[static_cast<std::size_t>(column_of(var))];
+}
+
+void HighsSolver::set_variable_upper(Variable var, double upper) {
+    std::int64_t col = column_of(var);
+    Highs_changeColBounds(highs_, static_cast<HighsInt>(col),
+                           lp_.col_lower[static_cast<std::size_t>(col)], upper);
+    lp_.col_upper[static_cast<std::size_t>(col)] = upper;
+}
+
+VarKind HighsSolver::variable_kind(Variable var) const {
+    return lp_.col_kind[static_cast<std::size_t>(column_of(var))];
+}
+
+void HighsSolver::set_variable_kind(Variable var, VarKind kind) {
+    std::int64_t col = column_of(var);
+    Highs_changeColIntegrality(highs_, static_cast<HighsInt>(col), to_highs_integrality(kind));
+    lp_.col_kind[static_cast<std::size_t>(col)] = kind;
 }
 
 namespace {

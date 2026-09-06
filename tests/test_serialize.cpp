@@ -28,10 +28,17 @@ TEST_CASE("a flat block round-trips through serialize/deserialize", "[serialize]
     REQUIRE(sub != nullptr);
     REQUIRE(sub->var("x").has_value());
     REQUIRE(sub->var("y").has_value());
-    ConstraintRef total_ref = *sub->constraint("total");
-    REQUIRE(sub->constraint_lower(total_ref) == Approx(5.0));
-    REQUIRE(sub->objective_coefficient_local(*sub->var("x")) == Approx(2.0));
-    REQUIRE(sub->objective_coefficient_local(*sub->var("y")) == Approx(3.0));
+    REQUIRE(sub->constraint("total").has_value());
+
+    // A wrong constraint bound or objective coefficient surviving the
+    // round-trip would change this optimum: satisfying x + y >= 5 entirely
+    // with x (cost 2) beats routing any of it through y (cost 3).
+    auto solver = create_solver(model, "highs");
+    SolveResult result = solver->solve();
+    REQUIRE(result.optimal);
+    REQUIRE(result.objective_value == Approx(10.0));
+    REQUIRE(result.value(*sub->var("x")) == Approx(5.0));
+    REQUIRE(result.value(*sub->var("y")) == Approx(0.0));
 }
 
 TEST_CASE("nested blocks with cross-block references round-trip and still solve", "[serialize]") {
@@ -64,11 +71,11 @@ TEST_CASE("nested blocks with cross-block references round-trip and still solve"
 
     // The reconstructed constraint must reference the *new* handles, not
     // the original ones from before serialization.
-    REQUIRE(rebuilt_root->constraint_coefficient(new_min_total, new_x) == Approx(1.0));
-    REQUIRE(rebuilt_root->constraint_coefficient(new_min_total, new_y) == Approx(1.0));
-    REQUIRE(rebuilt_root->objective_coefficient(new_y) == Approx(6.0));  // 2.0 * multiplier 3.0
-
     auto solver = create_solver(model, "highs");
+    REQUIRE(solver->constraint_coefficient(new_min_total, new_x) == Approx(1.0));
+    REQUIRE(solver->constraint_coefficient(new_min_total, new_y) == Approx(1.0));
+    REQUIRE(solver->objective_coefficient(new_y) == Approx(6.0));  // 2.0 * multiplier 3.0
+
     SolveResult result = solver->solve();
     REQUIRE(result.optimal);
     REQUIRE(result.objective_value == Approx(5.0));

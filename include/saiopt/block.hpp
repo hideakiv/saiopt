@@ -148,41 +148,6 @@ public:
     const Block* child(const std::string& name) const;
     Block* child(const std::string& name);
 
-    // Local objective coefficient of `var` in this block's own objective
-    // expression only -- unscaled by any multiplier on the path to the
-    // model root. See objective_coefficient for the effective, flattened
-    // value the solver actually sees.
-    double objective_coefficient_local(Variable var) const;
-
-    // Set the local objective coefficient of `var` in this block's own
-    // objective expression, unscaled.
-    void set_objective_coefficient_local(Variable var, double coeff);
-
-    // Effective objective coefficient of `var`: the sum, over this block
-    // and every attached descendant whose own objective references `var`,
-    // of that block's local coefficient times the product of multipliers
-    // from this block down to it. This is what the solver sees.
-    double objective_coefficient(Variable var) const;
-
-    // Coefficient of `var` in the constraint referenced by `cref`, wherever
-    // in this block's own subtree that constraint was added.
-    double constraint_coefficient(ConstraintRef cref, Variable var) const;
-
-    // Set the coefficient of `var` in the constraint referenced by `cref`.
-    void set_constraint_coefficient(ConstraintRef cref, Variable var, double coeff);
-
-    // Lower bound of the constraint referenced by `cref`.
-    double constraint_lower(ConstraintRef cref) const;
-
-    // Set the lower bound of the constraint referenced by `cref`.
-    void set_constraint_lower(ConstraintRef cref, double lower);
-
-    // Upper bound of the constraint referenced by `cref`.
-    double constraint_upper(ConstraintRef cref) const;
-
-    // Set the upper bound of the constraint referenced by `cref`.
-    void set_constraint_upper(ConstraintRef cref, double upper);
-
     // Serialize this block's whole structure -- variables, constraints,
     // objective, and attached children, recursively, all with their names
     // -- to a flat byte buffer. Meant for handing to another process (e.g.
@@ -213,11 +178,6 @@ private:
         Constraint constraint;
     };
 
-    // Find the block with the given id anywhere in this block's own
-    // subtree, including itself.
-    const Block* find(BlockId id) const;
-    Block* find(BlockId id);
-
     // Path (as a sequence of child indices, walked from `block` down) to
     // the descendant (or `block` itself, with an empty path) that owns
     // `var`, appended onto `path`. Returns false, leaving `path`
@@ -228,12 +188,6 @@ private:
     static void write_block(std::vector<std::byte>& out, const Block& block);
     static void write_expression(std::vector<std::byte>& out, const Block& block,
                                   const LinearExpression& expr);
-
-    // Product of multipliers from this block down to the descendant (or
-    // self) with the given id, if it's found in this block's own subtree.
-    std::optional<double> find_scale(BlockId id, double scale) const;
-
-    double objective_coefficient_scaled(double scale, Variable var) const;
 
     BlockId id_;
     std::vector<VarData> vars_;

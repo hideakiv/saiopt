@@ -32,10 +32,10 @@ TEST_CASE("nested blocks aggregate scaled objectives", "[block]") {
     // sum of each attached block's own objective, scaled by its multiplier.
     model.set_objective(ObjectiveSense::Maximize, LinearExpression{});
 
-    REQUIRE(model.objective_coefficient(x) == Approx(5.0));
-    REQUIRE(model.objective_coefficient(y) == Approx(6.0));  // 3.0 * multiplier 2.0
-
     auto solver = create_solver(model, "highs");
+    REQUIRE(solver->objective_coefficient(x) == Approx(5.0));
+    REQUIRE(solver->objective_coefficient(y) == Approx(6.0));  // 3.0 * multiplier 2.0
+
     SolveResult result = solver->solve();
     REQUIRE(result.optimal);
     REQUIRE(result.objective_value == Approx(74.0));  // 5*10 + 6*4

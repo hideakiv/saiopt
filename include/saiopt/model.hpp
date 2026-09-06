@@ -151,43 +151,6 @@ public:
         root_.set_objective(std::move(expr));
     }
 
-    // Effective (flattened) objective coefficient of `var` -- what the
-    // solver actually sees. See Block::objective_coefficient.
-    double objective_coefficient(Variable var) const { return root_.objective_coefficient(var); }
-
-    // Set the effective objective coefficient of `var` by adjusting the
-    // local coefficient in the block that owns it, dividing out that
-    // block's cumulative multiplier so the *effective* value comes out to
-    // `coeff`. If another ancestor block also references `var` in its own
-    // objective, that contribution is left untouched -- use block_mut to
-    // edit a specific block's term directly.
-    void set_objective_coefficient(Variable var, double coeff);
-
-    // Local objective coefficient of `var` in the block that owns it,
-    // unscaled by any multiplier on the path to the root.
-    double objective_coefficient_local(Variable var) const;
-
-    // Set the local objective coefficient of `var` in the block that owns
-    // it, unscaled.
-    void set_objective_coefficient_local(Variable var, double coeff);
-
-    double constraint_coefficient(ConstraintRef cref, Variable var) const {
-        return root_.constraint_coefficient(cref, var);
-    }
-    void set_constraint_coefficient(ConstraintRef cref, Variable var, double coeff) {
-        root_.set_constraint_coefficient(cref, var, coeff);
-    }
-
-    double constraint_lower(ConstraintRef cref) const { return root_.constraint_lower(cref); }
-    void set_constraint_lower(ConstraintRef cref, double lower) {
-        root_.set_constraint_lower(cref, lower);
-    }
-
-    double constraint_upper(ConstraintRef cref) const { return root_.constraint_upper(cref); }
-    void set_constraint_upper(ConstraintRef cref, double upper) {
-        root_.set_constraint_upper(cref, upper);
-    }
-
     // Print a human-readable summary of the model to `os`: its objective
     // sense, and every block's own objective contribution, variables, and
     // constraints, with child blocks indented under their parent. A

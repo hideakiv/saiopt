@@ -52,10 +52,10 @@ TEST_CASE("range constraint bounds both sides of an expression", "[lp]") {
     model.add_constraint("x_cap", x <= 20.0);
     model.add_constraint("y_cap", y <= 20.0);
 
-    REQUIRE(model.constraint_lower(total) == Approx(10.0));
-    REQUIRE(model.constraint_upper(total) == Approx(20.0));
-
     auto solver = create_solver(model, "highs");
+    REQUIRE(solver->constraint_lower(total) == Approx(10.0));
+    REQUIRE(solver->constraint_upper(total) == Approx(20.0));
+
     SolveResult result = solver->solve();
 
     REQUIRE(result.optimal);
@@ -70,8 +70,9 @@ TEST_CASE("range constraint via >= chaining and constant folding", "[lp]") {
     // 15.0 >= (x + 5.0) >= 5.0  =>  0.0 <= x <= 10.0
     ConstraintRef c = model.add_constraint("bounded", 15.0 >= x + 5.0 >= 5.0);
 
-    REQUIRE(model.constraint_lower(c) == Approx(0.0));
-    REQUIRE(model.constraint_upper(c) == Approx(10.0));
+    auto solver = create_solver(model, "highs");
+    REQUIRE(solver->constraint_lower(c) == Approx(0.0));
+    REQUIRE(solver->constraint_upper(c) == Approx(10.0));
 }
 
 TEST_CASE("duals, reduced costs, and sensitivity ranging on a simple LP", "[lp]") {

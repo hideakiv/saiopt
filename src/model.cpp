@@ -30,8 +30,12 @@ std::string format_kind(VarKind kind) {
     return "?";
 }
 
-// Fallback label for a variable that has no name registered anywhere in
-// the tree -- identifies it by its owning block and local index.
+// Fallback label for a variable with no name registered anywhere in the
+// tree being printed -- every variable this tree actually owns has one
+// (add_var requires it), so this only fires for a stray reference to a
+// variable from outside the tree (flatten() rejects that at solve time;
+// print() doesn't validate it, so it falls back here instead of crashing).
+// Identifies the variable by its owning block and local index.
 std::string fallback_label(Variable var) {
     return "#" + std::to_string(var.block().raw()) + "." + std::to_string(var.index());
 }

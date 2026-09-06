@@ -50,14 +50,17 @@ struct ChildBlock;
 // belong to the block itself or to one of its attached descendants -- never
 // to an ancestor. This is enforced when the tree is solved.
 //
-// Every variable, constraint, and attached block is named (a variable's
-// name is optional, via VariableDef::name; a constraint's or attached
-// block's name is mandatory) and can be looked back up later with var /
-// constraint / block (or their collection counterparts vars / constraints /
-// blocks, for a whole SAIOPT_VARS/SAIOPT_CONSTRAINTS/SAIOPT_BLOCKS-declared
-// group at once) -- each block has its own local namespace, so a lookup
-// only ever searches that block's own vars/constraints/children, not its
-// descendants'.
+// Every variable, constraint, and attached block is named -- mandatorily,
+// a required parameter of add_var/add_constraint/add_block, not an
+// optional property of what's being added -- and can be looked back up
+// later with var / constraint / block (or their collection counterparts
+// vars / constraints / blocks, for a whole SAIOPT_VARS/SAIOPT_CONSTRAINTS/
+// SAIOPT_BLOCKS-declared group at once) -- each block has its own local
+// namespace, so a lookup only ever searches that block's own
+// vars/constraints/children, not its descendants'. This is what
+// guarantees a Variable/ConstraintRef/BlockRef stays reachable by name
+// even once its own handle (add_var/add_constraint/add_block's return
+// value) is out of scope.
 //
 // A Block is move-only: copying one would duplicate its BlockId, breaking
 // the invariant that a BlockId uniquely identifies one block in the tree.
@@ -69,21 +72,15 @@ public:
     Block(Block&&) = default;
     Block& operator=(Block&&) = default;
 
-    Variable add_var(VariableDef def);
-
-    // Add one variable per item in `index`, built by `def(k)`, left
-    // unnamed unless `def` itself calls .name(...) -- e.g. for fully
-    // custom per-item naming, or none at all. Doesn't register a
-    // retrievable group; see the named overload below for that.
-    template <typename Range, typename DefFn>
-    auto add_vars(const Range& index, DefFn&& def) {
-        using K = std::decay_t<decltype(*std::begin(index))>;
-        std::map<K, Variable> map;
-        for (const auto& k : index) {
-            map.emplace(k, add_var(def(k)));
-        }
-        return Indexed<K, Variable>::from_map(std::move(map));
-    }
+    // Add a variable named `name` to this block, described by `def`
+    // (kind and bounds; see VariableDef). Every variable is named -- like
+    // add_constraint/add_block, `name` is a required parameter here
+    // rather than an optional property of `def` -- so a Variable is
+    // always reachable again via var(name) even once its own handle
+    // (this call's return value) is out of scope. Throws
+    // std::runtime_error if a variable named `name` already exists in
+    // this block.
+    Variable add_var(std::string name, VariableDef def);
 
     // Add one variable per item in `index`, built by `def(k)`, each named
     // `{name}[{k}]` (see add_constraints for why the group is named) and
@@ -99,7 +96,7 @@ public:
         std::map<K, Variable> map;
         std::vector<Variable> ordered;
         for (const auto& k : index) {
-            Variable v = add_var(def(k).name(detail::indexed_name(name, k)));
+            Variable v = add_var(detail::indexed_name(name, k), def(k));
             map.emplace(k, v);
             ordered.push_back(v);
         }

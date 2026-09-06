@@ -88,12 +88,7 @@ class Model {
 public:
     Model() = default;
 
-    Variable add_var(VariableDef def) { return root_.add_var(std::move(def)); }
-
-    template <typename Range, typename DefFn>
-    auto add_vars(const Range& index, DefFn&& def) {
-        return root_.add_vars(index, std::forward<DefFn>(def));
-    }
+    Variable add_var(std::string name, VariableDef def) { return root_.add_var(std::move(name), std::move(def)); }
 
     template <typename Range, typename DefFn>
     auto add_vars(std::string name, const Range& index, DefFn&& def) {
@@ -250,9 +245,12 @@ public:
     //
     // Elsewhere (variable listings and constraints, which can span
     // several blocks in one expression) a variable's label is its own
-    // name if it has one, qualified by its block's full path (e.g.
-    // "sub.y" for a name set inside a block added under "sub"), or
-    // "#<index>" if unnamed.
+    // name, qualified by its block's full path (e.g. "sub.y" for a name
+    // set inside a block added under "sub") -- every variable has one
+    // (add_var requires it), so the "#<index>" fallback only shows up for
+    // a variable this model's own tree doesn't actually own (a stray
+    // out-of-subtree reference flatten() would otherwise reject at solve
+    // time; print() doesn't validate that, so it can't crash on one).
     void print(std::ostream& os) const;
 
     // Convenience overload, printing to std::cout.

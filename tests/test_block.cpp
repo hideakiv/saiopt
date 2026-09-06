@@ -17,12 +17,12 @@ TEST_CASE("nested blocks aggregate scaled objectives", "[block]") {
     Model model;
 
     Block widgets;
-    Variable x = widgets.add_var(VariableDef::continuous().bound(0.0, 10.0).name("x"));
+    Variable x = widgets.add_var("x", VariableDef::continuous().bound(0.0, 10.0));
     widgets.set_objective(5.0 * x);
     widgets.add_constraint("cap", x <= 10.0);
 
     Block gadgets;
-    Variable y = gadgets.add_var(VariableDef::continuous().bound(0.0, 4.0).name("y"));
+    Variable y = gadgets.add_var("y", VariableDef::continuous().bound(0.0, 4.0));
     gadgets.set_objective(3.0 * y);
     gadgets.add_constraint("cap", y <= 4.0);
 
@@ -51,23 +51,23 @@ TEST_CASE("nested blocks aggregate scaled objectives", "[block]") {
 
 TEST_CASE("duplicate variable name in a block throws", "[block]") {
     Model model;
-    model.add_var(VariableDef::continuous().name("dup"));
-    REQUIRE_THROWS_AS(model.add_var(VariableDef::continuous().name("dup")), std::runtime_error);
+    model.add_var("dup", VariableDef::continuous());
+    REQUIRE_THROWS_AS(model.add_var("dup", VariableDef::continuous()), std::runtime_error);
 }
 
 TEST_CASE("duplicate constraint name in a block throws", "[block]") {
     Model model;
-    Variable x = model.add_var(VariableDef::continuous());
+    Variable x = model.add_var("x", VariableDef::continuous());
     model.add_constraint("cap", x <= 5.0);
     REQUIRE_THROWS_AS(model.add_constraint("cap", x <= 5.0), std::runtime_error);
 }
 
 TEST_CASE("print labels nested-block variables by their qualified path", "[block]") {
     Model model;
-    Variable x = model.add_var(VariableDef::continuous().bound(0.0, kInfinity).name("x"));
+    Variable x = model.add_var("x", VariableDef::continuous().bound(0.0, kInfinity));
 
     Block child;
-    Variable y = child.add_var(VariableDef::continuous().bound(0.0, 4.0).name("y"));
+    Variable y = child.add_var("y", VariableDef::continuous().bound(0.0, 4.0));
     child.add_constraint("y_upper", y <= 4.0);
     child.set_objective(2.0 * y);
     model.add_block_scaled("sub", std::move(child), 3.0);
@@ -118,9 +118,9 @@ TEST_CASE("print folds nested objectives with the right sign, multiplier, and in
 
     SECTION("a multiplier of exactly 1 gets no numeric prefix") {
         Model model;
-        Variable x = model.add_var(VariableDef::continuous().name("x"));
+        Variable x = model.add_var("x", VariableDef::continuous());
         Block child;
-        Variable y = child.add_var(VariableDef::continuous().name("y"));
+        Variable y = child.add_var("y", VariableDef::continuous());
         child.set_objective(y);
         model.add_block_scaled("sub", std::move(child), 1.0);
         model.set_objective(ObjectiveSense::Minimize, x);
@@ -130,9 +130,9 @@ TEST_CASE("print folds nested objectives with the right sign, multiplier, and in
 
     SECTION("a negative multiplier subtracts instead of adding") {
         Model model;
-        Variable x = model.add_var(VariableDef::continuous().name("x"));
+        Variable x = model.add_var("x", VariableDef::continuous());
         Block child;
-        Variable y = child.add_var(VariableDef::continuous().name("y"));
+        Variable y = child.add_var("y", VariableDef::continuous());
         child.set_objective(y);
         model.add_block_scaled("sub", std::move(child), -2.0);
         model.set_objective(ObjectiveSense::Minimize, x);
@@ -142,10 +142,10 @@ TEST_CASE("print folds nested objectives with the right sign, multiplier, and in
 
     SECTION("an empty intermediate block contributes no stray parentheses") {
         Model model;
-        Variable x = model.add_var(VariableDef::continuous().name("x"));
+        Variable x = model.add_var("x", VariableDef::continuous());
 
         Block grandchild;
-        Variable z = grandchild.add_var(VariableDef::continuous().name("z"));
+        Variable z = grandchild.add_var("z", VariableDef::continuous());
         grandchild.set_objective(z);
 
         Block child;  // no local objective, no own variables
@@ -159,7 +159,7 @@ TEST_CASE("print folds nested objectives with the right sign, multiplier, and in
 
     SECTION("no objective anywhere falls back to 0") {
         Model model;
-        model.add_var(VariableDef::continuous().name("x"));
+        model.add_var("x", VariableDef::continuous());
         model.set_objective(ObjectiveSense::Minimize, LinearExpression{});
 
         REQUIRE(objective_block(model) == "0");
@@ -167,15 +167,15 @@ TEST_CASE("print folds nested objectives with the right sign, multiplier, and in
 
     SECTION("a sibling term shares a line with the previous one's close paren") {
         Model model;
-        Variable x = model.add_var(VariableDef::continuous().name("x"));
+        Variable x = model.add_var("x", VariableDef::continuous());
 
         Block p;
-        Variable u = p.add_var(VariableDef::continuous().name("u"));
+        Variable u = p.add_var("u", VariableDef::continuous());
         p.set_objective(u);
         model.add_block("p", std::move(p));  // default multiplier 1
 
         Block q;
-        Variable w = q.add_var(VariableDef::continuous().name("w"));
+        Variable w = q.add_var("w", VariableDef::continuous());
         q.set_objective(w);
         model.add_block_scaled("q", std::move(q), -3.0);
 
@@ -187,7 +187,7 @@ TEST_CASE("print folds nested objectives with the right sign, multiplier, and in
 
 TEST_CASE("a block cannot reference an ancestor's variable", "[block]") {
     Model model;
-    Variable r = model.add_var(VariableDef::continuous());
+    Variable r = model.add_var("r", VariableDef::continuous());
 
     Block child;
     child.add_constraint("bad", r <= 5.0);

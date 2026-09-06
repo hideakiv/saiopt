@@ -24,7 +24,7 @@
 // See saiopt/var_spec.hpp for VarSpec.
 #define SAIOPT_VAR(block, ident, ...) \
     [[maybe_unused]] auto ident =     \
-        (block).add_var(::saiopt::detail::make_var_def(::saiopt::detail::VarSpec{__VA_ARGS__}).name(#ident))
+        (block).add_var(#ident, ::saiopt::detail::make_var_def(::saiopt::detail::VarSpec{__VA_ARGS__}))
 
 #define SAIOPT_CONSTRAINT(block, ident, expr) [[maybe_unused]] auto ident = (block).add_constraint(#ident, (expr))
 

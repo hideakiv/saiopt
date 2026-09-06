@@ -43,12 +43,12 @@ TEST_CASE("a flat block round-trips through serialize/deserialize", "[serialize]
 
 TEST_CASE("nested blocks with cross-block references round-trip and still solve", "[serialize]") {
     Block child;
-    Variable y = child.add_var(VariableDef::continuous().bound(0.0, 4.0).name("y"));
+    Variable y = child.add_var("y", VariableDef::continuous().bound(0.0, 4.0));
     child.add_constraint("y_upper", y <= 4.0);
     child.set_objective(2.0 * y);
 
     Block root;
-    Variable x = root.add_var(VariableDef::continuous().bound(0.0, kInfinity).name("x"));
+    Variable x = root.add_var("x", VariableDef::continuous().bound(0.0, kInfinity));
     root.add_block_scaled("sub", std::move(child), 3.0);
     // A parent constraint referencing the (already-built) child's variable.
     root.add_constraint("min_total", x + y >= 5.0);
@@ -81,13 +81,13 @@ TEST_CASE("nested blocks with cross-block references round-trip and still solve"
     REQUIRE(result.objective_value == Approx(5.0));
 }
 
-TEST_CASE("an unnamed variable round-trips without a name", "[serialize]") {
+TEST_CASE("a variable's name round-trips exactly", "[serialize]") {
     Block block;
-    Variable v = block.add_var(VariableDef::continuous().bound(0.0, 1.0));
+    Variable v = block.add_var("v", VariableDef::continuous().bound(0.0, 1.0));
     block.set_objective(v);
 
     Block rebuilt = Block::deserialize(block.serialize());
-    REQUIRE_FALSE(rebuilt.var("v").has_value());
+    REQUIRE(rebuilt.var("v").has_value());
 }
 
 TEST_CASE("deserialize rejects a truncated buffer", "[serialize]") {
@@ -103,7 +103,7 @@ TEST_CASE("deserialize rejects a truncated buffer", "[serialize]") {
 
 TEST_CASE("serialize rejects a constraint referencing an out-of-subtree variable", "[serialize]") {
     Model model;
-    Variable r = model.add_var(VariableDef::continuous());
+    Variable r = model.add_var("r", VariableDef::continuous());
 
     Block child;
     child.add_constraint("bad", r <= 5.0);

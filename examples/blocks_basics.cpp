@@ -8,8 +8,8 @@
 
 // The smallest possible demonstration of SAIOPT_VAR, SAIOPT_CONSTRAINT, and
 // SAIOPT_BLOCK_SCALED used together: every variable, constraint, and added
-// block is declared and named in one step, with no .name("...") written
-// separately from the local it matches.
+// block is declared and named in one step, with no name written separately
+// from the local it matches (as a string literal repeated on its own).
 //
 // Root objective is just x; the child block contributes 2*y, scaled by a
 // multiplier of 3 when added, so the total objective is x + 6*y. A root

@@ -6,16 +6,12 @@
 
 namespace saiopt {
 
-Variable Block::add_var(VariableDef def) {
+Variable Block::add_var(std::string name, VariableDef def) {
     std::size_t index = vars_.size();
     Variable variable(id_, index);
-    if (def.name_) {
-        auto [it, inserted] = var_names_.emplace(*def.name_, variable);
-        (void)it;
-        if (!inserted) {
-            throw std::runtime_error("a variable named \"" + *def.name_ +
-                                      "\" already exists in this block");
-        }
+    auto [it, inserted] = var_names_.emplace(std::move(name), variable);
+    if (!inserted) {
+        throw std::runtime_error("a variable named \"" + it->first + "\" already exists in this block");
     }
     vars_.push_back(VarData{def.kind_, def.lower_, def.upper_});
     return variable;
@@ -227,13 +223,12 @@ RebuiltBlock read_block(Reader& reader) {
         auto kind = static_cast<VarKind>(reader.read_u8());
         double lower = reader.read_f64();
         double upper = reader.read_f64();
-        bool has_name = reader.read_u8() != 0;
+        std::string name = reader.read_string();
         VariableDef def = kind == VarKind::Continuous  ? VariableDef::continuous()
                            : kind == VarKind::Integer   ? VariableDef::integer()
                                                          : VariableDef::binary();
         def.bound(lower, upper);
-        if (has_name) def.name(reader.read_string());
-        own_vars.push_back(block.add_var(def));
+        own_vars.push_back(block.add_var(std::move(name), def));
     }
 
     std::uint64_t num_children = reader.read_u64();
@@ -289,19 +284,15 @@ void Block::write_expression(std::vector<std::byte>& out, const Block& block,
 
 void Block::write_block(std::vector<std::byte>& out, const Block& block) {
     std::vector<std::string> var_names(block.vars_.size());
-    std::vector<bool> has_name(block.vars_.size(), false);
-    for (const auto& [name, var] : block.var_names_) {
-        var_names[var.index()] = name;
-        has_name[var.index()] = true;
-    }
+    for (const auto& [name, var] : block.var_names_) var_names[var.index()] = name;
+
     append_u64(out, block.vars_.size());
     for (std::size_t i = 0; i < block.vars_.size(); ++i) {
         const VarData& vd = block.vars_[i];
         append_u8(out, static_cast<std::uint8_t>(vd.kind));
         append_f64(out, vd.lower);
         append_f64(out, vd.upper);
-        append_u8(out, has_name[i] ? 1 : 0);
-        if (has_name[i]) append_string(out, var_names[i]);
+        append_string(out, var_names[i]);
     }
 
     std::vector<std::string> child_names(block.children_.size());

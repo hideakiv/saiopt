@@ -14,8 +14,8 @@ using Catch::Approx;
 
 TEST_CASE("solves a simple minimization LP", "[lp]") {
     Model model;
-    Variable x = model.add_var(VariableDef::continuous());
-    Variable y = model.add_var(VariableDef::continuous().bound(0.0, 6.0));
+    Variable x = model.add_var("x", VariableDef::continuous());
+    Variable y = model.add_var("y", VariableDef::continuous().bound(0.0, 6.0));
 
     model.set_objective(ObjectiveSense::Minimize, x + y);
     model.add_constraint("min_total", x + y >= 10.0);
@@ -30,8 +30,8 @@ TEST_CASE("solves a simple minimization LP", "[lp]") {
 
 TEST_CASE("solves a maximization LP with an equality constraint", "[lp]") {
     Model model;
-    Variable x = model.add_var(VariableDef::continuous().bound(0.0, 20.0));
-    Variable y = model.add_var(VariableDef::continuous().bound(0.0, 20.0));
+    Variable x = model.add_var("x", VariableDef::continuous().bound(0.0, 20.0));
+    Variable y = model.add_var("y", VariableDef::continuous().bound(0.0, 20.0));
 
     model.set_objective(ObjectiveSense::Maximize, 3.0 * x + 2.0 * y);
     model.add_constraint("total", x + y == 10.0);
@@ -47,8 +47,8 @@ TEST_CASE("solves a maximization LP with an equality constraint", "[lp]") {
 
 TEST_CASE("range constraint bounds both sides of an expression", "[lp]") {
     Model model;
-    Variable x = model.add_var(VariableDef::continuous());
-    Variable y = model.add_var(VariableDef::continuous());
+    Variable x = model.add_var("x", VariableDef::continuous());
+    Variable y = model.add_var("y", VariableDef::continuous());
 
     model.set_objective(ObjectiveSense::Maximize, x + y);
     ConstraintRef total = model.add_constraint("total", 10.0 <= x + y <= 20.0);
@@ -67,7 +67,7 @@ TEST_CASE("range constraint bounds both sides of an expression", "[lp]") {
 
 TEST_CASE("range constraint via >= chaining and constant folding", "[lp]") {
     Model model;
-    Variable x = model.add_var(VariableDef::continuous());
+    Variable x = model.add_var("x", VariableDef::continuous());
 
     model.set_objective(ObjectiveSense::Minimize, x);
     // 15.0 >= (x + 5.0) >= 5.0  =>  0.0 <= x <= 10.0
@@ -80,8 +80,8 @@ TEST_CASE("range constraint via >= chaining and constant folding", "[lp]") {
 
 TEST_CASE("duals, reduced costs, and sensitivity ranging on a simple LP", "[lp]") {
     Model model;
-    Variable x = model.add_var(VariableDef::continuous().bound(0.0, kInfinity));
-    Variable y = model.add_var(VariableDef::continuous().bound(0.0, kInfinity));
+    Variable x = model.add_var("x", VariableDef::continuous().bound(0.0, kInfinity));
+    Variable y = model.add_var("y", VariableDef::continuous().bound(0.0, kInfinity));
 
     model.set_objective(ObjectiveSense::Minimize, 2.0 * x + 3.0 * y);
     ConstraintRef total = model.add_constraint("total", x + y >= 10.0);
@@ -117,7 +117,7 @@ TEST_CASE("duals, reduced costs, and sensitivity ranging on a simple LP", "[lp]"
 
 TEST_CASE("respects integrality on integer variables", "[milp]") {
     Model model;
-    Variable x = model.add_var(VariableDef::integer());
+    Variable x = model.add_var("x", VariableDef::integer());
 
     model.set_objective(ObjectiveSense::Minimize, -1.0 * x);
     model.add_constraint("cap", x <= 3.7);
@@ -141,7 +141,7 @@ TEST_CASE("respects integrality on integer variables", "[milp]") {
 
 TEST_CASE("create_solver applies backend-specific options", "[lp]") {
     Model model;
-    Variable x = model.add_var(VariableDef::continuous().bound(0.0, kInfinity));
+    Variable x = model.add_var("x", VariableDef::continuous().bound(0.0, kInfinity));
 
     model.set_objective(ObjectiveSense::Minimize, x);
     model.add_constraint("cap", x >= 5.0);

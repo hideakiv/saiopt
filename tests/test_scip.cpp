@@ -21,8 +21,8 @@ using Catch::Approx;
 
 TEST_CASE("solves a simple minimization LP via scip", "[scip]") {
     Model model;
-    Variable x = model.add_var(VariableDef::continuous());
-    Variable y = model.add_var(VariableDef::continuous().bound(0.0, 6.0));
+    Variable x = model.add_var("x", VariableDef::continuous());
+    Variable y = model.add_var("y", VariableDef::continuous().bound(0.0, 6.0));
 
     model.set_objective(ObjectiveSense::Minimize, x + y);
     model.add_constraint("min_total", x + y >= 10.0);
@@ -37,7 +37,7 @@ TEST_CASE("solves a simple minimization LP via scip", "[scip]") {
 
 TEST_CASE("respects integrality on integer variables via scip", "[scip][milp]") {
     Model model;
-    Variable x = model.add_var(VariableDef::integer());
+    Variable x = model.add_var("x", VariableDef::integer());
 
     model.set_objective(ObjectiveSense::Minimize, -1.0 * x);
     model.add_constraint("cap", x <= 3.7);
@@ -51,8 +51,8 @@ TEST_CASE("respects integrality on integer variables via scip", "[scip][milp]") 
 
 TEST_CASE("scip solver mutation methods take effect without re-flattening", "[scip]") {
     Model model;
-    Variable x = model.add_var(VariableDef::continuous().bound(0.0, 6.0));
-    Variable y = model.add_var(VariableDef::continuous().bound(0.0, kInfinity));
+    Variable x = model.add_var("x", VariableDef::continuous().bound(0.0, 6.0));
+    Variable y = model.add_var("y", VariableDef::continuous().bound(0.0, kInfinity));
     model.set_objective(ObjectiveSense::Minimize, 2.0 * x + 3.0 * y);
     ConstraintRef c = model.add_constraint("c1", x + y >= 10.0);
 
@@ -88,7 +88,7 @@ TEST_CASE("scip solver mutation methods take effect without re-flattening", "[sc
 
 TEST_CASE("create_solver applies SCIP-specific options", "[scip]") {
     Model model;
-    Variable x = model.add_var(VariableDef::continuous().bound(0.0, kInfinity));
+    Variable x = model.add_var("x", VariableDef::continuous().bound(0.0, kInfinity));
     model.set_objective(ObjectiveSense::Minimize, x);
     model.add_constraint("cap", x >= 5.0);
 

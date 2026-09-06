@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <functional>
-#include <optional>
 #include <string>
 
 #include "saiopt/block_id.hpp"
@@ -36,7 +35,10 @@ private:
     std::size_t index_;
 };
 
-// Fluent builder describing a variable to add to a Block/Model.
+// Fluent builder describing a variable's kind and bounds, to add to a
+// Block/Model via Block::add_var(name, def) -- naming lives on add_var
+// itself (a required parameter, like add_constraint/add_block), not here,
+// so this carries no more than Constraint does.
 //
 // The default (from VariableDef::continuous() / VariableDef::integer()) is
 // unbounded, ranging over (-inf, +inf). Use .bound(lower, upper) to
@@ -62,10 +64,6 @@ public:
         upper_ = kInfinity;
         return *this;
     }
-    VariableDef& name(std::string value) {
-        name_ = std::move(value);
-        return *this;
-    }
 
 private:
     friend class Block;
@@ -73,7 +71,6 @@ private:
     VarKind kind_ = VarKind::Continuous;
     double lower_ = -kInfinity;
     double upper_ = kInfinity;
-    std::optional<std::string> name_;
 };
 
 }  // namespace saiopt

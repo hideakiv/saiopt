@@ -24,8 +24,9 @@ public:
         }
 
         ModelFlattener flattener;
-        flattener.collect_vars(model.root_);
-        flattener.collect_constraints_and_objective(model.root_, 1.0);
+        const Block& root = model;
+        flattener.collect_vars(root);
+        flattener.collect_constraints_and_objective(root, 1.0);
         return flattener.build(model);
     }
 

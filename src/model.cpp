@@ -256,18 +256,18 @@ void Model::print_block(std::ostream& os, const Block& block,
 
 void Model::print(std::ostream& os) const {
     std::unordered_map<Variable, std::string> labels;
-    collect_labels(root_, "", labels);
+    collect_labels(*this, "", labels);
 
     os << "model ("
        << (sense_ ? (*sense_ == ObjectiveSense::Minimize ? "minimize" : "maximize")
                   : "no objective")
        << ")\n";
-    std::vector<std::string> objective_lines = format_total_objective_lines(root_, labels, "", 2);
+    std::vector<std::string> objective_lines = format_total_objective_lines(*this, labels, "", 2);
     if (objective_lines.empty()) objective_lines.push_back("  0");
     os << "objective:\n";
     for (const auto& line : objective_lines) os << line << "\n";
 
-    print_block(os, root_, labels, 0);
+    print_block(os, *this, labels, 0);
 }
 
 void Model::print() const { print(std::cout); }

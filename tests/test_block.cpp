@@ -196,3 +196,76 @@ TEST_CASE("a block cannot reference an ancestor's variable", "[block]") {
 
     REQUIRE_THROWS_AS(create_solver(model, "highs"), std::runtime_error);
 }
+
+TEST_CASE("Model(Block, sense) promotes a standalone Block, keeping its own objective", "[block]") {
+    // A reusable builder that returns a self-contained Block, with no
+    // idea yet whether it'll be solved on its own or attached as some
+    // other Model's child.
+    auto build_diet = []() {
+        Block block;
+        Variable bread = block.add_var("bread", VariableDef::continuous().bound(0.0, kInfinity));
+        Variable milk = block.add_var("milk", VariableDef::continuous().bound(0.0, kInfinity));
+        block.add_constraint("protein", 4.0 * bread + 8.0 * milk >= 20.0);
+        block.set_objective(2.0 * bread + 3.0 * milk);
+        return block;
+    };
+
+    SECTION("promoted directly and solved") {
+        Model model(build_diet(), ObjectiveSense::Minimize);
+
+        auto solver = create_solver(model, "highs");
+        SolveResult result = solver->solve();
+        REQUIRE(result.optimal);
+        // All-milk (20/8=2.5 units, cost 7.5) beats all-bread (20/4=5
+        // units, cost 10) -- milk is the cheaper protein source here.
+        REQUIRE(result.objective_value == Approx(7.5));
+    }
+
+    SECTION("the same builder's Block attaches as a child just as well") {
+        Model model;
+        model.add_block_scaled("diet", build_diet(), 2.0);
+        model.set_objective(ObjectiveSense::Minimize, LinearExpression{});
+
+        auto solver = create_solver(model, "highs");
+        SolveResult result = solver->solve();
+        REQUIRE(result.optimal);
+        REQUIRE(result.objective_value == Approx(15.0));  // 7.5 * multiplier 2.0
+    }
+
+    SECTION("the single-argument constructor leaves sense unset until set_objective") {
+        Model model{build_diet()};
+        REQUIRE_THROWS_AS(create_solver(model, "highs"), std::runtime_error);
+
+        // set_objective(sense, expr) replaces the promoted Block's own
+        // objective, same as calling it twice on any Model always does.
+        Variable bread = *model.var("bread");
+        model.set_objective(ObjectiveSense::Minimize, bread);
+        auto solver = create_solver(model, "highs");
+        SolveResult result = solver->solve();
+        REQUIRE(result.optimal);
+        REQUIRE(result.objective_value == Approx(0.0));
+    }
+}
+
+TEST_CASE("Model::to_block() hands a Model's content back as a plain Block", "[block]") {
+    Model model;
+    Variable x = model.add_var("x", VariableDef::continuous().bound(0.0, kInfinity));
+    model.add_constraint("cap", x <= 4.0);
+    model.set_objective(ObjectiveSense::Minimize, 2.0 * x);
+
+    Block block = std::move(model).to_block();
+    REQUIRE(block.var("x").has_value());
+    REQUIRE(block.constraint("cap").has_value());
+
+    // Attaching it as a child elsewhere folds its (former) objective in
+    // as an ordinary scaled contribution -- sense_ is gone, as expected,
+    // since only the new parent Model's own sense matters now.
+    Model parent;
+    parent.add_block_scaled("child", std::move(block), 5.0);
+    parent.set_objective(ObjectiveSense::Maximize, LinearExpression{});
+
+    auto solver = create_solver(parent, "highs");
+    SolveResult result = solver->solve();
+    REQUIRE(result.optimal);
+    REQUIRE(result.objective_value == Approx(40.0));  // maximize 5 * (2x), x capped at 4 -> 10*4
+}

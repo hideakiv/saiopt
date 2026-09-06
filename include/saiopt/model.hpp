@@ -84,127 +84,79 @@ struct SolveResult {
 // be solved from -- via create_solver(model, solver_name) (see
 // saiopt/solver.hpp) -- and carries no dependency on any particular
 // solver.
-class Model {
+//
+// Privately inherits Block rather than composing one: a Model *is*, for
+// every purpose but the ones below, simply the root Block of its own
+// tree -- add_var/add_constraint/add_block[_scaled]/block/var/constraint
+// (and their indexed and index-free counterparts) all mean exactly the
+// same thing here as they do on any other Block, just anchored at the
+// root, so bringing them in with `using` needs no re-explaining of their
+// contract. It's *private* inheritance, not public: a Model carries one
+// thing no other Block does (`sense_`, its solve-time objective
+// direction), and Block is passed by value all over its own API
+// (add_block/add_block_scaled/ChildBlock) -- if Model were-a Block
+// publicly, passing one to any of those would silently slice `sense_`
+// off with no warning. Private inheritance gets the shared behavior back
+// without ever letting a Model implicitly become a plain Block.
+//
+// Block's own set_objective(expr) (only ever a local, unscaled
+// *contribution* -- meaningful for a non-root Block, scaled by whatever
+// multiplier it's attached with) is deliberately NOT brought in the same
+// way: only *this* class's own two-argument set_objective(sense, expr)
+// below is public, since a Model with a contribution but no sense would
+// otherwise fail to solve for a reason that's easy to miss.
+class Model : private Block {
 public:
+    using Block::add_block;
+    using Block::add_block_scaled;
+    using Block::add_blocks;
+    using Block::add_blocks_scaled;
+    using Block::add_constraint;
+    using Block::add_constraints;
+    using Block::add_var;
+    using Block::add_vars;
+    using Block::block;
+    using Block::blocks;
+    using Block::constraint;
+    using Block::constraints;
+    using Block::var;
+    using Block::vars;
+
     Model() = default;
 
-    Variable add_var(std::string name, VariableDef def) { return root_.add_var(std::move(name), std::move(def)); }
+    // Promotes a standalone Block into a Model, as its root -- e.g. a
+    // Block built by a reusable function that may end up either attached
+    // as some other Model's child, or solved directly as its own Model,
+    // depending on the caller (see to_block() below for the reverse).
+    // `block`'s own local objective, if it set one, becomes the promoted
+    // Model's own root contribution, exactly as it would for any other
+    // already-Model-rooted Block. sense_ is left unset here, so a solve
+    // still needs set_objective(sense, ...) first -- which replaces
+    // `block`'s own objective, the same as calling it a second time on
+    // any Model always does; use the two-argument constructor below to
+    // attach a sense without touching an objective already set.
+    //
+    // Explicit: a Block shouldn't silently become a Model wherever one's
+    // expected (e.g. passed to a function taking `const Model&`).
+    explicit Model(Block block) : Block(std::move(block)) {}
 
-    template <typename Range, typename DefFn>
-    auto add_vars(std::string name, const Range& index, DefFn&& def) {
-        return root_.add_vars(std::move(name), index, std::forward<DefFn>(def));
-    }
+    // Same promotion, but also fixing the solve-time objective sense up
+    // front, keeping `block`'s own already-set local objective as-is --
+    // for a Block a reusable builder function already gave a complete
+    // objective, needing only a sense to become solvable on its own.
+    Model(Block block, ObjectiveSense sense) : Block(std::move(block)), sense_(sense) {}
 
-    ConstraintRef add_constraint(std::string name, Constraint constraint) {
-        return root_.add_constraint(std::move(name), std::move(constraint));
-    }
-
-    template <typename Range, typename Fn>
-    auto add_constraints(std::string name, const Range& index, Fn&& f) {
-        return root_.add_constraints(std::move(name), index, std::forward<Fn>(f));
-    }
-
-    // Move `child` with a multiplier of 1.0, under `name` so it can later
-    // be reached with child/child_mut. See add_block_scaled.
-    BlockRef add_block(std::string name, Block child) {
-        return root_.add_block(std::move(name), std::move(child));
-    }
-
-    // Move `child` into this model's tree under `name`; `child`'s own
-    // objective is added to the model's total objective, scaled by
-    // `multiplier`.
-    BlockRef add_block_scaled(std::string name, Block child, double multiplier) {
-        return root_.add_block_scaled(std::move(name), std::move(child), multiplier);
-    }
-
-    template <typename Range, typename Fn>
-    auto add_blocks(std::string name, const Range& index, Fn&& f) {
-        return root_.add_blocks(std::move(name), index, std::forward<Fn>(f));
-    }
-
-    template <typename Range, typename Fn, typename MultFn>
-    auto add_blocks_scaled(std::string name, const Range& index, Fn&& f, MultFn&& multiplier) {
-        return root_.add_blocks_scaled(std::move(name), index, std::forward<Fn>(f),
-                                        std::forward<MultFn>(multiplier));
-    }
-
-    const Block& block(BlockRef ref) const { return root_.block(ref); }
-    Block& block(BlockRef ref) { return root_.block(ref); }
-
-    // Look up a child block added with add_block / add_block_scaled under
-    // `name`.
-    const Block* block(const std::string& name) const { return root_.block(name); }
-    Block* block(const std::string& name) { return root_.block(name); }
-
-    // Look up a whole indexed group of child blocks added by add_blocks
-    // (or SAIOPT_BLOCKS/add_blocks_scaled/SAIOPT_BLOCKS_SCALED) at the
-    // model's root -- see Block::blocks.
-    template <typename Range>
-    auto blocks(const std::string& name, const Range& index) const {
-        return root_.blocks(name, index);
-    }
-    template <typename Range>
-    auto blocks(const std::string& name, const Range& index) {
-        return root_.blocks(name, index);
-    }
-
-    // The untyped and typed index-free counterparts to blocks(name,
-    // index) at the model's root -- see Block::blocks.
-    std::vector<const Block*> blocks(const std::string& name) const { return root_.blocks(name); }
-    std::vector<Block*> blocks(const std::string& name) { return root_.blocks(name); }
-    template <typename K>
-    Indexed<K, const Block*> blocks(const std::string& name) const {
-        return root_.blocks<K>(name);
-    }
-    template <typename K>
-    Indexed<K, Block*> blocks(const std::string& name) {
-        return root_.blocks<K>(name);
-    }
-
-    // Look up a variable added with .name(name) at the model's root (not
-    // inside any attached block).
-    std::optional<Variable> var(const std::string& name) const { return root_.var(name); }
-
-    // Look up a whole indexed group of variables added by add_vars (or
-    // SAIOPT_VARS) at the model's root -- see Block::vars.
-    template <typename Range>
-    auto vars(const std::string& name, const Range& index) const {
-        return root_.vars(name, index);
-    }
-
-    // The untyped and typed index-free counterparts to vars(name, index)
-    // at the model's root -- see Block::vars.
-    std::vector<Variable> vars(const std::string& name) const { return root_.vars(name); }
-    template <typename K>
-    Indexed<K, Variable> vars(const std::string& name) const {
-        return root_.vars<K>(name);
-    }
-
-    // Look up a constraint added under `name` at the model's root (not
-    // inside any attached block).
-    std::optional<ConstraintRef> constraint(const std::string& name) const {
-        return root_.constraint(name);
-    }
-
-    // Look up a whole indexed group of constraints added by
-    // add_constraints (or SAIOPT_CONSTRAINTS) at the model's root -- see
-    // Block::constraints.
-    template <typename Range>
-    auto constraints(const std::string& name, const Range& index) const {
-        return root_.constraints(name, index);
-    }
-
-    // The untyped and typed index-free counterparts to constraints(name,
-    // index) at the model's root -- see Block::constraints.
-    std::vector<ConstraintRef> constraints(const std::string& name) const { return root_.constraints(name); }
-    template <typename K>
-    Indexed<K, ConstraintRef> constraints(const std::string& name) const {
-        return root_.constraints<K>(name);
-    }
+    // The reverse of the two constructors above: hands back this Model's
+    // own content as a plain Block -- e.g. to attach it as a child block
+    // somewhere else instead of solving it directly -- discarding sense_
+    // (a Block has no notion of solve direction; only a model root does).
+    // Rvalue-qualified: consumes *this, the same way the rest of Block's
+    // own API always transfers ownership of one rather than copying it.
+    Block to_block() && { return std::move(static_cast<Block&>(*this)); }
 
     void set_objective(ObjectiveSense sense, LinearExpression expr) {
         sense_ = sense;
-        root_.set_objective(std::move(expr));
+        Block::set_objective(std::move(expr));
     }
 
     // Print a human-readable summary of the model to `os`: its objective
@@ -287,7 +239,6 @@ private:
                                                                    const std::unordered_map<Variable, std::string>& labels,
                                                                    const std::string& prefix, int indent);
 
-    Block root_;
     std::optional<ObjectiveSense> sense_;
 };
 

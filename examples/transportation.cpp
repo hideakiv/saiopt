@@ -51,7 +51,7 @@ int main() {
     for (const auto& [w, c] : routes) {
         total_cost += cost.at({w, c}) * x[{w, c}];
     }
-    model.set_objective(ObjectiveSense::Minimize, total_cost);
+    SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, total_cost);
 
     auto solver = create_solver(model, "highs");
     SolveResult result = solver->solve();

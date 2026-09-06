@@ -26,11 +26,11 @@ int main() {
     Block child;
     SAIOPT_VAR(child, y, VariableDef::continuous().bound(0.0, kInfinity));
     SAIOPT_CONSTRAINT(child, y_upper, y <= 4.0);
-    child.set_objective(2.0 * y);
+    SAIOPT_OBJECTIVE(child, 2.0 * y);
     SAIOPT_BLOCK_SCALED(model, sub, std::move(child), 3.0);
 
     SAIOPT_CONSTRAINT(model, min_total, x + y >= 5.0);
-    model.set_objective(ObjectiveSense::Minimize, x);
+    SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, x);
 
     auto solver = create_solver(model, "highs");
     SolveResult result = solver->solve();

@@ -60,7 +60,10 @@ mpirun -n 4 ./build/examples/mpi_parallel_build
 `SAIOPT_CONSTRAINTS`, plus `SAIOPT_BLOCK[_SCALED]`/`SAIOPT_BLOCKS[_SCALED]`
 for attaching sub-models) derive both a local C++ variable's name and its
 `saiopt` lookup name from one identifier, so `model.var("bread")` later
-doesn't need `"bread"` repeated as a separate string literal:
+doesn't need `"bread"` repeated as a separate string literal. `SAIOPT_OBJECTIVE`
+rounds this family out as a thin wrapper around `set_objective` -- there's no
+name to derive there, so it's only for keeping every declaration in a model
+written the same way:
 
 ```cpp
 #include "saiopt/macros.hpp"
@@ -73,7 +76,7 @@ Model model;
 SAIOPT_VAR(model, bread, VariableDef::continuous());
 SAIOPT_VAR(model, milk, VariableDef::continuous());
 
-model.set_objective(ObjectiveSense::Minimize, 2.0 * bread + 3.0 * milk);
+SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, 2.0 * bread + 3.0 * milk);
 SAIOPT_CONSTRAINT(model, protein, 4.0 * bread + 8.0 * milk >= 20.0);
 SAIOPT_CONSTRAINT(model, calories, 100.0 * bread + 150.0 * milk >= 400.0);
 

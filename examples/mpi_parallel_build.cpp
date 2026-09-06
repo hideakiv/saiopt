@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
 
     Block region;
     SAIOPT_VAR(region, produce, VariableDef::continuous().bound(0.0, capacity));
-    region.set_objective(cost_per_unit * produce);
+    SAIOPT_OBJECTIVE(region, cost_per_unit * produce);
 
     if (rank != 0) {
         mpi::send_block(region, /*dest=*/0, build_tag);
@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
         LinearExpression total_production;
         for (Variable v : produce_of) total_production += v;
         SAIOPT_CONSTRAINT(model, meet_demand, total_production >= demand);
-        model.set_objective(ObjectiveSense::Minimize, LinearExpression{});
+        SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, LinearExpression{});
 
         auto solver = create_solver(model, "highs");
         SolveResult result = solver->solve();

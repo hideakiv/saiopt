@@ -74,7 +74,7 @@ int main() {
     for (const auto& name : food_names) {
         total_cost += by_name.at(name)->cost * x[name];
     }
-    model.set_objective(ObjectiveSense::Minimize, total_cost);
+    SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, total_cost);
 
     auto solver = create_solver(model, "highs");
     SolveResult result = solver->solve();

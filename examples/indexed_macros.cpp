@@ -57,7 +57,7 @@ int main() {
 
     LinearExpression total_open;
     for (const auto& name : regions) total_open += open[name];
-    model.set_objective(ObjectiveSense::Minimize, total_open);
+    SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, total_open);
 
     auto solver = create_solver(model, "highs");
     SolveResult result = solver->solve();

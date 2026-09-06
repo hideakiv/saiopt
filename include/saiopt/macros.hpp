@@ -53,3 +53,12 @@
 
 #define SAIOPT_BLOCKS_SCALED(block, ident, index, child, multiplier) \
     [[maybe_unused]] auto ident = (block).add_blocks_scaled(#ident, (index), (child), (multiplier))
+
+// set_objective has no name to derive -- an objective is never looked
+// back up by string the way a var/constraint/block is -- so this is only
+// a thin wrapper, for consistency with the macros above. Forwards
+// whatever's passed after `target` to whichever set_objective overload
+// matches: SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, expr) for a
+// Model's root objective, or SAIOPT_OBJECTIVE(child, expr) for a Block's
+// own local contribution.
+#define SAIOPT_OBJECTIVE(target, ...) (target).set_objective(__VA_ARGS__)

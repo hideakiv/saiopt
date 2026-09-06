@@ -61,7 +61,7 @@ Block build_facility_block(const Facility& f, const std::vector<int>& period_ran
     }
     SAIOPT_CONSTRAINT(sub, produce_total_link, produce_total == produce_sum);
 
-    sub.set_objective(f.production_cost * produce_total);
+    SAIOPT_OBJECTIVE(sub, f.production_cost * produce_total);
     return sub;
 }
 
@@ -115,7 +115,7 @@ int main() {
 
     LinearExpression fixed_cost_total;
     for (const auto& f : facilities) fixed_cost_total += f.fixed_cost * open[f.name];
-    model.set_objective(ObjectiveSense::Minimize, fixed_cost_total);
+    SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, fixed_cost_total);
 
     auto solver = create_solver(model, "highs");
     SolveResult result = solver->solve();

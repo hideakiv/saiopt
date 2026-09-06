@@ -3,10 +3,10 @@
 #include <string>
 #include <utility>
 
-#include "saiopt/highs_solver.hpp"
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
 #include "saiopt/set.hpp"
+#include "saiopt/solver.hpp"
 
 // A classic 2-index transportation problem: ship goods from warehouses to
 // customers at minimum cost, respecting warehouse supply limits and
@@ -53,7 +53,8 @@ int main() {
     }
     model.set_objective(ObjectiveSense::Minimize, total_cost);
 
-    SolveResult result = model.solve(HighsSolver{});
+    auto solver = create_solver(model, "highs");
+    SolveResult result = solver->solve();
 
     std::printf("minimum shipping cost = %.2f\n", result.objective_value);
     for (const auto& [w, c] : routes) {

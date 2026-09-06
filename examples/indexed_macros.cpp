@@ -2,10 +2,10 @@
 #include <map>
 #include <string>
 
-#include "saiopt/highs_solver.hpp"
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
 #include "saiopt/set.hpp"
+#include "saiopt/solver.hpp"
 
 // A small model shaped to use every indexed macro together: SAIOPT_VARS for
 // an indexed root decision, SAIOPT_BLOCKS for an indexed batch of attached
@@ -59,7 +59,8 @@ int main() {
     for (const auto& name : regions) total_open += open[name];
     model.set_objective(ObjectiveSense::Minimize, total_open);
 
-    SolveResult result = model.solve(HighsSolver{});
+    auto solver = create_solver(model, "highs");
+    SolveResult result = solver->solve();
 
     std::printf("regions opened = %.0f\n", result.objective_value);
     for (const auto& name : regions) {

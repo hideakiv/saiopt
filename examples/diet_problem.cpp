@@ -4,10 +4,10 @@
 #include <string>
 #include <vector>
 
-#include "saiopt/highs_solver.hpp"
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
 #include "saiopt/set.hpp"
+#include "saiopt/solver.hpp"
 
 // The classic "diet problem": choose how many units of each food to buy to
 // minimize cost while meeting minimum calorie and protein requirements and
@@ -76,7 +76,8 @@ int main() {
     }
     model.set_objective(ObjectiveSense::Minimize, total_cost);
 
-    SolveResult result = model.solve(HighsSolver{});
+    auto solver = create_solver(model, "highs");
+    SolveResult result = solver->solve();
 
     std::printf("minimum cost = %.2f\n", result.objective_value);
     std::vector<std::string> sorted_names = names;

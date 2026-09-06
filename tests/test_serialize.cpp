@@ -4,9 +4,9 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "saiopt/highs_solver.hpp"
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
+#include "saiopt/solver.hpp"
 
 using namespace saiopt;
 using Catch::Approx;
@@ -68,7 +68,8 @@ TEST_CASE("nested blocks with cross-block references round-trip and still solve"
     REQUIRE(rebuilt_root->constraint_coefficient(new_min_total, new_y) == Approx(1.0));
     REQUIRE(rebuilt_root->objective_coefficient(new_y) == Approx(6.0));  // 2.0 * multiplier 3.0
 
-    SolveResult result = model.solve(HighsSolver{});
+    auto solver = create_solver(model, "highs");
+    SolveResult result = solver->solve();
     REQUIRE(result.optimal);
     REQUIRE(result.objective_value == Approx(5.0));
 }

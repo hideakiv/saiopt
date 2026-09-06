@@ -4,9 +4,9 @@
 
 #include <mpi.h>
 
-#include "saiopt/highs_solver.hpp"
 #include "saiopt/mpi.hpp"
 #include "saiopt/model.hpp"
+#include "saiopt/solver.hpp"
 
 // Each MPI rank builds one "region" Block in parallel -- its own capacity
 // and per-unit cost -- and sends it to rank 0, which gathers every
@@ -58,7 +58,8 @@ int main(int argc, char** argv) {
         model.add_constraint("meet_demand", total_production >= demand);
         model.set_objective(ObjectiveSense::Minimize, LinearExpression{});
 
-        SolveResult result = model.solve(HighsSolver{});
+        auto solver = create_solver(model, "highs");
+        SolveResult result = solver->solve();
         if (!result.optimal) {
             std::printf("built from %d ranks: infeasible (not enough total capacity for demand %.2f)\n",
                         size, demand);

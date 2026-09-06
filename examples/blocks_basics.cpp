@@ -2,9 +2,9 @@
 #include <cstdio>
 #include <utility>
 
-#include "saiopt/highs_solver.hpp"
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
+#include "saiopt/solver.hpp"
 
 // The smallest possible demonstration of SAIOPT_VAR, SAIOPT_CONSTRAINT, and
 // SAIOPT_BLOCK_SCALED used together: every variable, constraint, and added
@@ -32,7 +32,8 @@ int main() {
     SAIOPT_CONSTRAINT(model, min_total, x + y >= 5.0);
     model.set_objective(ObjectiveSense::Minimize, x);
 
-    SolveResult result = model.solve(HighsSolver{});
+    auto solver = create_solver(model, "highs");
+    SolveResult result = solver->solve();
 
     std::printf("minimum total cost = %.2f\n", result.objective_value);
     std::printf("  x = %.2f\n", result.value(x));

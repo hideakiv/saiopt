@@ -5,6 +5,13 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# saiopt (and saiopt_mpi) are always linked into saiopt_highs (and other
+# future SHARED backends), regardless of whether BUILD_SHARED_LIBS ends up
+# ON or OFF for their own build -- PIC keeps that link valid either way,
+# rather than relying on some dependency's FetchContent incidentally
+# flipping BUILD_SHARED_LIBS to ON before these targets are declared.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 endif()
@@ -20,6 +27,7 @@ add_library(saiopt
   src/constraint.cpp
   src/block.cpp
   src/sparse_lp.cpp
+  src/solver.cpp
   src/model.cpp
 )
 target_include_directories(saiopt
@@ -43,7 +51,12 @@ if(SAIOPT_WITH_HIGHS)
   )
   FetchContent_MakeAvailable(highs)
 
-  add_library(saiopt_highs
+  # SHARED, not the default library type, so the static initializer that
+  # registers "highs" under saiopt::create_solver (see src/highs_solver.cpp)
+  # is guaranteed to run just by linking this in -- a static archive can
+  # otherwise have its whole-registration translation unit dropped by the
+  # linker since nothing calls into it directly.
+  add_library(saiopt_highs SHARED
     src/highs_solver.cpp
   )
   target_include_directories(saiopt_highs

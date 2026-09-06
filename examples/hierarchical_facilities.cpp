@@ -4,10 +4,10 @@
 #include <string>
 #include <vector>
 
-#include "saiopt/highs_solver.hpp"
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
 #include "saiopt/set.hpp"
+#include "saiopt/solver.hpp"
 
 // A small facility-location model built out of Blocks: the root Model
 // decides which facilities to open (one indexed open[f] variable per
@@ -117,7 +117,8 @@ int main() {
     for (const auto& f : facilities) fixed_cost_total += f.fixed_cost * open[f.name];
     model.set_objective(ObjectiveSense::Minimize, fixed_cost_total);
 
-    SolveResult result = model.solve(HighsSolver{});
+    auto solver = create_solver(model, "highs");
+    SolveResult result = solver->solve();
 
     std::printf("minimum total cost = %.2f\n", result.objective_value);
     for (const auto& f : facilities) {

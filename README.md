@@ -2,10 +2,12 @@
 Structured Algebraic Interface for Optimization
 
 A C++20 algebraic modeling library for LP/MILP. The core library is
-solver-agnostic: it only depends on the abstract `Solver` interface
-(`saiopt/solver.hpp`), and any backend can implement it. `saiopt_highs`
-ships one such backend, built on [HiGHS](https://highs.dev/) (linked via
-its C API).
+solver-agnostic: it only depends on the abstract `Solver` interface and a
+name-based factory (`saiopt/solver.hpp`), and any backend can implement
+it and register itself under a name -- no HiGHS-specific (or any other
+backend's) header required to use one. `saiopt_highs` ships one such
+backend, registered as `"highs"`, built on [HiGHS](https://highs.dev/)
+(linked via its C API).
 
 ## Building
 
@@ -60,9 +62,9 @@ for attaching sub-models) derive both a local C++ variable's name and its
 doesn't need `"bread"` repeated as a separate string literal:
 
 ```cpp
-#include "saiopt/highs_solver.hpp"
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
+#include "saiopt/solver.hpp"
 
 using namespace saiopt;
 
@@ -74,9 +76,20 @@ model.set_objective(ObjectiveSense::Minimize, 2.0 * bread + 3.0 * milk);
 SAIOPT_CONSTRAINT(model, protein, 4.0 * bread + 8.0 * milk >= 20.0);
 SAIOPT_CONSTRAINT(model, calories, 100.0 * bread + 150.0 * milk >= 400.0);
 
-SolveResult result = model.solve(HighsSolver{});
+auto solver = create_solver(model, "highs");
+SolveResult result = solver->solve();
 ```
 
-`model.solve` takes any `Solver` implementation, so swapping backends (or
-writing your own -- just implement `Solver::solve`) never touches `Model`
-or the rest of the modeling code.
+`create_solver(model, name)` looks up the backend registered under `name`
+(linking `saiopt_highs` registers `"highs"`; writing your own backend is
+just implementing `Solver` and registering it -- see `saiopt/solver.hpp`)
+and translates `model` into that backend's native form once, handing back
+a `Solver` you keep and call `solve()` on. Calling `solve()` again reuses
+that same translated state rather than re-flattening the Block tree, so
+it's cheap to solve the same model repeatedly. None of this needs a
+HiGHS-specific header, so swapping backends never touches `Model` or the
+rest of the modeling code.
+
+(`HighsSolver` doesn't yet expose a way to push a post-construction change
+to `model` -- e.g. a tweaked bound -- into that cached state; today,
+re-solving after such a change still means building a new `Solver`.)

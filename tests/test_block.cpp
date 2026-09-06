@@ -6,8 +6,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "saiopt/highs_solver.hpp"
 #include "saiopt/model.hpp"
+#include "saiopt/solver.hpp"
 
 using namespace saiopt;
 using Catch::Approx;
@@ -35,7 +35,8 @@ TEST_CASE("nested blocks aggregate scaled objectives", "[block]") {
     REQUIRE(model.objective_coefficient(x) == Approx(5.0));
     REQUIRE(model.objective_coefficient(y) == Approx(6.0));  // 3.0 * multiplier 2.0
 
-    SolveResult result = model.solve(HighsSolver{});
+    auto solver = create_solver(model, "highs");
+    SolveResult result = solver->solve();
     REQUIRE(result.optimal);
     REQUIRE(result.objective_value == Approx(74.0));  // 5*10 + 6*4
     REQUIRE(result.value(x) == Approx(10.0));
@@ -92,5 +93,5 @@ TEST_CASE("a block cannot reference an ancestor's variable", "[block]") {
     model.add_block("child", std::move(child));
     model.set_objective(ObjectiveSense::Minimize, LinearExpression{});
 
-    REQUIRE_THROWS_AS(model.solve(HighsSolver{}), std::runtime_error);
+    REQUIRE_THROWS_AS(create_solver(model, "highs"), std::runtime_error);
 }

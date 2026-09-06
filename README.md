@@ -35,7 +35,8 @@ Run an example:
 ```
 
 Other examples: `blocks_basics`, `indexed_macros`, `hierarchical_facilities`,
-and `transportation` -- see `examples/` for what each demonstrates.
+`transportation`, and `solver_mutation` -- see `examples/` for what each
+demonstrates.
 
 ## MPI
 
@@ -90,14 +91,16 @@ it's cheap to solve the same model repeatedly. None of this needs a
 HiGHS-specific header, so swapping backends never touches `Model` or the
 rest of the modeling code.
 
-`Solver` also carries the coefficient/bound get/set methods that used to
-live on `Model` -- `objective_coefficient`/`set_objective_coefficient`,
+`Solver` also carries coefficient/bound/kind get/set methods that used
+to live on `Model` -- `objective_coefficient`/`set_objective_coefficient`,
 `constraint_coefficient`/`set_constraint_coefficient`,
 `constraint_lower`/`set_constraint_lower`,
-`constraint_upper`/`set_constraint_upper` -- but they now act directly on
-the backend's live state (e.g. `HighsSolver` calls straight into HiGHS'
-own change-coefficient API) instead of the `Model` tree, so a change
-takes effect on the *next* `solve()` with no re-flattening either:
+`constraint_upper`/`set_constraint_upper`, `variable_lower`/
+`set_variable_lower`, `variable_upper`/`set_variable_upper`, and
+`variable_kind`/`set_variable_kind` -- but they now act directly on the
+backend's live state (e.g. `HighsSolver` calls straight into HiGHS' own
+change-coefficient API) instead of the `Model` tree, so a change takes
+effect on the *next* `solve()` with no re-flattening either:
 
 ```cpp
 auto solver = create_solver(model, "highs");
@@ -106,3 +109,5 @@ SolveResult r1 = solver->solve();
 solver->set_objective_coefficient(bread, 4.0);  // reprice, no re-flatten
 SolveResult r2 = solver->solve();
 ```
+
+See `examples/solver_mutation.cpp` for all of these in one walkthrough.

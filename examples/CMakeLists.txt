@@ -4,6 +4,7 @@ foreach(example
     indexed_macros
     hierarchical_facilities
     transportation
+    solver_mutation
 )
   add_executable(${example} ${example}.cpp)
   # saiopt_highs is only ever used through its "highs" self-registration

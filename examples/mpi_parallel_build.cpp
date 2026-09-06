@@ -4,6 +4,7 @@
 
 #include <mpi.h>
 
+#include "saiopt/macros.hpp"
 #include "saiopt/mpi.hpp"
 #include "saiopt/model.hpp"
 #include "saiopt/solver.hpp"
@@ -32,7 +33,7 @@ int main(int argc, char** argv) {
     double cost_per_unit = 5.0 - 0.5 * rank;
 
     Block region;
-    Variable produce = region.add_var(VariableDef::continuous().bound(0.0, capacity).name("produce"));
+    SAIOPT_VAR(region, produce, VariableDef::continuous().bound(0.0, capacity));
     region.set_objective(cost_per_unit * produce);
 
     if (rank != 0) {
@@ -55,7 +56,7 @@ int main(int argc, char** argv) {
 
         LinearExpression total_production;
         for (Variable v : produce_of) total_production += v;
-        model.add_constraint("meet_demand", total_production >= demand);
+        SAIOPT_CONSTRAINT(model, meet_demand, total_production >= demand);
         model.set_objective(ObjectiveSense::Minimize, LinearExpression{});
 
         auto solver = create_solver(model, "highs");

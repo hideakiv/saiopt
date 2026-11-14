@@ -1,6 +1,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -268,4 +269,25 @@ TEST_CASE("Model::to_block() hands a Model's content back as a plain Block", "[b
     SolveResult result = solver->solve();
     REQUIRE(result.optimal());
     REQUIRE(result.objective_value == Approx(40.0));  // maximize 5 * (2x), x capped at 4 -> 10*4
+}
+
+TEST_CASE("variables and constraints in different blocks hash apart", "[block]") {
+    // Every block numbers its own items from 0, so a weak hash combine lets
+    // (block, index) pairs from different blocks collide -- which quietly
+    // turns every Variable- or ConstraintRef-keyed lookup into a scan.
+    std::vector<Block> blocks(24);
+    std::unordered_set<std::size_t> var_hashes;
+    std::unordered_set<std::size_t> constraint_hashes;
+    std::size_t count = 0;
+    for (Block& b : blocks) {
+        for (int i = 0; i < 2000; ++i) {
+            Variable v = b.add_var("v" + std::to_string(i), VariableDef::continuous());
+            ConstraintRef c = b.add_constraint("c" + std::to_string(i), v >= 0.0);
+            var_hashes.insert(std::hash<Variable>{}(v));
+            constraint_hashes.insert(std::hash<ConstraintRef>{}(c));
+            ++count;
+        }
+    }
+    REQUIRE(var_hashes.size() == count);
+    REQUIRE(constraint_hashes.size() == count);
 }

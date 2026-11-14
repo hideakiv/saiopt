@@ -39,6 +39,39 @@ SCIP_VARTYPE to_scip_vartype(VarKind kind) {
     return SCIP_VARTYPE_CONTINUOUS;
 }
 
+SolveStatus to_solve_status(SCIP_STATUS status) {
+    switch (status) {
+        case SCIP_STATUS_OPTIMAL:
+            return SolveStatus::Optimal;
+        case SCIP_STATUS_INFEASIBLE:
+            return SolveStatus::Infeasible;
+        case SCIP_STATUS_UNBOUNDED:
+            return SolveStatus::Unbounded;
+        case SCIP_STATUS_INFORUNBD:
+            return SolveStatus::InfeasibleOrUnbounded;
+        case SCIP_STATUS_TIMELIMIT:
+            return SolveStatus::TimeLimit;
+        case SCIP_STATUS_NODELIMIT:
+        case SCIP_STATUS_TOTALNODELIMIT:
+        case SCIP_STATUS_STALLNODELIMIT:
+            return SolveStatus::NodeLimit;
+        case SCIP_STATUS_SOLLIMIT:
+        case SCIP_STATUS_BESTSOLLIMIT:
+            return SolveStatus::SolutionLimit;
+        case SCIP_STATUS_GAPLIMIT:
+            return SolveStatus::GapLimit;
+        case SCIP_STATUS_MEMLIMIT:
+            return SolveStatus::MemoryLimit;
+        case SCIP_STATUS_USERINTERRUPT:
+        case SCIP_STATUS_TERMINATE:
+            return SolveStatus::Interrupted;
+        // Includes SCIP_STATUS_RESTARTLIMIT, which has no counterpart in
+        // SolveStatus.
+        default:
+            return SolveStatus::Unknown;
+    }
+}
+
 // SCIP treats any bound past its own infinity threshold as a numerics
 // problem rather than as infinite unless it's exactly SCIPinfinity(),
 // so saiopt's own kInfinity-based sentinels need translating both ways.
@@ -273,10 +306,13 @@ SolveResult ScipSolver::solve() {
     check(SCIPsolve(scip), "SCIPsolve");
 
     SolveResult result;
-    result.optimal = (SCIPgetStatus(scip) == SCIP_STATUS_OPTIMAL);
+    result.status = to_solve_status(SCIPgetStatus(scip));
 
+    // SCIP only ever keeps feasible solutions, so having a best one at
+    // all means there's a feasible primal solution to report.
     SCIP_SOL* sol = SCIPgetBestSol(scip);
     if (sol != nullptr) {
+        result.has_solution = true;
         result.objective_value = SCIPgetSolOrigObj(scip, sol);
         for (std::size_t i = 0; i < lp_.col_variable.size(); ++i) {
             result.variable_values.emplace(lp_.col_variable[i],

@@ -151,6 +151,28 @@ this the same way, but keyed by SCIP's own parameter names instead
 tried against both SCIP's int- and Longint-valued parameters, since
 `SolverOptions` doesn't distinguish the two the way SCIP does.
 
+`result.status` says how the solve ended, as a `SolveStatus` each
+backend maps its own native status onto -- `Optimal`, `Infeasible`,
+`Unbounded`, `InfeasibleOrUnbounded`, a limit (`TimeLimit`,
+`IterationLimit`, `NodeLimit`, `SolutionLimit`, `GapLimit`,
+`ObjectiveLimit`, `MemoryLimit`), `Interrupted`, `Error`, or `Unknown`
+(`to_string` gives a readable name). A solve that stops early can still
+leave a feasible solution behind -- e.g. a MIP that hits its time limit
+with an incumbent -- so whether there's one to read is a separate
+`result.has_solution`; `objective_value` and `value(...)` are only
+populated when it's true:
+
+```cpp
+SolveResult result = solver->solve();
+if (result.optimal()) {
+    // proven optimal
+} else if (result.has_solution) {
+    // feasible but unproven, e.g. result.status == SolveStatus::TimeLimit
+} else {
+    std::printf("no solution: %s\n", std::string(to_string(result.status)).c_str());
+}
+```
+
 `solver->set_progress_callback(...)` registers a callback that fires
 periodically during `solve()` with a `SolverProgress` snapshot
 (elapsed time, iteration count, objective value, and -- for a MIP
@@ -163,7 +185,7 @@ solver->set_progress_callback([](const SolverProgress& p) {
     std::printf("t=%.1fs obj=%.2f\n", p.elapsed_seconds, p.objective_value);
     return p.elapsed_seconds < 30.0;  // stop after 30 seconds
 });
-SolveResult result = solver->solve();  // reports non-optimal if interrupted
+SolveResult result = solver->solve();  // status is Interrupted if stopped early
 ```
 
 An interrupted `Solver` isn't guaranteed to behave like a fresh one if

@@ -300,7 +300,7 @@ TEST_CASE("indexed vars solve and their values can be looked up in bulk", "[macr
 
     auto solver = create_solver(model, "highs");
     SolveResult result = solver->solve();
-    REQUIRE(result.optimal);
+    REQUIRE(result.optimal());
 
     Indexed<std::string, double> values = result.values(x);
     REQUIRE(values[std::string("a")] == Approx(5.0));

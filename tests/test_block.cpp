@@ -38,7 +38,7 @@ TEST_CASE("nested blocks aggregate scaled objectives", "[block]") {
     REQUIRE(solver->objective_coefficient(y) == Approx(6.0));  // 3.0 * multiplier 2.0
 
     SolveResult result = solver->solve();
-    REQUIRE(result.optimal);
+    REQUIRE(result.optimal());
     REQUIRE(result.objective_value == Approx(74.0));  // 5*10 + 6*4
     REQUIRE(result.value(x) == Approx(10.0));
     REQUIRE(result.value(y) == Approx(4.0));
@@ -215,7 +215,7 @@ TEST_CASE("Model(Block, sense) promotes a standalone Block, keeping its own obje
 
         auto solver = create_solver(model, "highs");
         SolveResult result = solver->solve();
-        REQUIRE(result.optimal);
+        REQUIRE(result.optimal());
         // All-milk (20/8=2.5 units, cost 7.5) beats all-bread (20/4=5
         // units, cost 10) -- milk is the cheaper protein source here.
         REQUIRE(result.objective_value == Approx(7.5));
@@ -228,7 +228,7 @@ TEST_CASE("Model(Block, sense) promotes a standalone Block, keeping its own obje
 
         auto solver = create_solver(model, "highs");
         SolveResult result = solver->solve();
-        REQUIRE(result.optimal);
+        REQUIRE(result.optimal());
         REQUIRE(result.objective_value == Approx(15.0));  // 7.5 * multiplier 2.0
     }
 
@@ -242,7 +242,7 @@ TEST_CASE("Model(Block, sense) promotes a standalone Block, keeping its own obje
         model.set_objective(ObjectiveSense::Minimize, bread);
         auto solver = create_solver(model, "highs");
         SolveResult result = solver->solve();
-        REQUIRE(result.optimal);
+        REQUIRE(result.optimal());
         REQUIRE(result.objective_value == Approx(0.0));
     }
 }
@@ -266,6 +266,6 @@ TEST_CASE("Model::to_block() hands a Model's content back as a plain Block", "[b
 
     auto solver = create_solver(parent, "highs");
     SolveResult result = solver->solve();
-    REQUIRE(result.optimal);
+    REQUIRE(result.optimal());
     REQUIRE(result.objective_value == Approx(40.0));  // maximize 5 * (2x), x capped at 4 -> 10*4
 }

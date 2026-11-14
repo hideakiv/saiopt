@@ -79,8 +79,8 @@ int main() {
     auto solver = create_solver(model, "highs");
     SolveResult result = solver->solve();
 
-    if (!result.optimal) {
-        std::printf("infeasible\n");
+    if (!result.optimal()) {
+        std::printf("no optimal solution: %s\n", std::string(to_string(result.status)).c_str());
         return 0;
     }
     std::printf("minimum shipping cost = %.2f  (%zu arcs used, out of a possible %zux%zu grid)\n",

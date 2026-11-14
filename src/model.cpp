@@ -126,6 +126,42 @@ std::string format_constraint(const Constraint& c,
 
 }  // namespace
 
+std::string_view to_string(SolveStatus status) noexcept {
+    switch (status) {
+        case SolveStatus::Optimal:
+            return "optimal";
+        case SolveStatus::Infeasible:
+            return "infeasible";
+        case SolveStatus::Unbounded:
+            return "unbounded";
+        case SolveStatus::InfeasibleOrUnbounded:
+            return "infeasible or unbounded";
+        case SolveStatus::TimeLimit:
+            return "time limit";
+        case SolveStatus::IterationLimit:
+            return "iteration limit";
+        case SolveStatus::NodeLimit:
+            return "node limit";
+        case SolveStatus::SolutionLimit:
+            return "solution limit";
+        case SolveStatus::GapLimit:
+            return "gap limit";
+        case SolveStatus::ObjectiveLimit:
+            return "objective limit";
+        case SolveStatus::MemoryLimit:
+            return "memory limit";
+        case SolveStatus::Interrupted:
+            return "interrupted";
+        case SolveStatus::Error:
+            return "error";
+        case SolveStatus::Unknown:
+            return "unknown";
+    }
+    return "unknown";
+}
+
+std::ostream& operator<<(std::ostream& os, SolveStatus status) { return os << to_string(status); }
+
 void Model::collect_labels(const Block& block, const std::string& prefix,
                             std::unordered_map<Variable, std::string>& labels) {
     for (const auto& [name, var] : block.var_names_) {

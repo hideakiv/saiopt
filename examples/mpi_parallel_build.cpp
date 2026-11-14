@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <numeric>
+#include <string>
 #include <vector>
 
 #include <mpi.h>
@@ -65,9 +66,12 @@ int main(int argc, char** argv) {
 
         auto solver = create_solver(model, "highs");
         SolveResult result = solver->solve();
-        if (!result.optimal) {
+        if (result.status == SolveStatus::Infeasible) {
             std::printf("built from %d ranks: infeasible (not enough total capacity for demand %.2f)\n",
                         size, demand);
+        } else if (!result.optimal()) {
+            std::printf("built from %d ranks: no optimal solution (%s)\n", size,
+                        std::string(to_string(result.status)).c_str());
         } else {
             std::printf("built from %d ranks, minimum cost = %.2f\n", size, result.objective_value);
             for (std::size_t i = 0; i < produce_of.size(); ++i) {

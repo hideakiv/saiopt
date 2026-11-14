@@ -24,7 +24,7 @@ TEST_CASE("solves a simple minimization LP", "[lp]") {
     auto solver = create_solver(model, "highs");
     SolveResult result = solver->solve();
 
-    REQUIRE(result.optimal);
+    REQUIRE(result.optimal());
     REQUIRE(result.objective_value == Approx(10.0));
 }
 
@@ -39,7 +39,7 @@ TEST_CASE("solves a maximization LP with an equality constraint", "[lp]") {
     auto solver = create_solver(model, "highs");
     SolveResult result = solver->solve();
 
-    REQUIRE(result.optimal);
+    REQUIRE(result.optimal());
     REQUIRE(result.objective_value == Approx(30.0));
     REQUIRE(result.value(x) == Approx(10.0));
     REQUIRE(result.value(y) == Approx(0.0));
@@ -61,7 +61,7 @@ TEST_CASE("range constraint bounds both sides of an expression", "[lp]") {
 
     SolveResult result = solver->solve();
 
-    REQUIRE(result.optimal);
+    REQUIRE(result.optimal());
     REQUIRE(result.objective_value == Approx(20.0));
 }
 
@@ -88,7 +88,7 @@ TEST_CASE("duals, reduced costs, and sensitivity ranging on a simple LP", "[lp]"
 
     auto solver = create_solver(model, "highs");
     SolveResult result = solver->solve();
-    REQUIRE(result.optimal);
+    REQUIRE(result.optimal());
     REQUIRE(result.value(x) == Approx(10.0));
     REQUIRE(result.value(y) == Approx(0.0));
 
@@ -125,7 +125,7 @@ TEST_CASE("respects integrality on integer variables", "[milp]") {
     auto solver = create_solver(model, "highs");
     SolveResult result = solver->solve();
 
-    REQUIRE(result.optimal);
+    REQUIRE(result.optimal());
     REQUIRE(result.value(x) == Approx(3.0));
 
     // HiGHS zeroes out duals/reduced costs for a MILP rather than giving
@@ -150,7 +150,7 @@ TEST_CASE("create_solver applies backend-specific options", "[lp]") {
         auto solver = create_solver(
             model, "highs", SolverOptions{}.set_double("mip_rel_gap", 0.01).set_bool("output_flag", false));
         SolveResult result = solver->solve();
-        REQUIRE(result.optimal);
+        REQUIRE(result.optimal());
         REQUIRE(result.value(x) == Approx(5.0));
     }
 
@@ -204,7 +204,7 @@ TEST_CASE("progress callback fires during solve and can interrupt it", "[lp]") {
             return true;
         });
         SolveResult result = solver->solve();
-        REQUIRE(result.optimal);
+        REQUIRE(result.optimal());
         REQUIRE(calls > 0);
     }
 
@@ -216,7 +216,8 @@ TEST_CASE("progress callback fires during solve and can interrupt it", "[lp]") {
             return false;
         });
         SolveResult result = solver->solve();
-        REQUIRE_FALSE(result.optimal);
+        REQUIRE_FALSE(result.optimal());
+        REQUIRE(result.status == SolveStatus::Interrupted);
         REQUIRE(calls > 0);
     }
 
@@ -227,6 +228,71 @@ TEST_CASE("progress callback fires during solve and can interrupt it", "[lp]") {
 
         auto solver = create_solver(model, "highs");
         SolveResult result = solver->solve();
-        REQUIRE(result.optimal);
+        REQUIRE(result.optimal());
+    }
+}
+
+TEST_CASE("solve reports a structured status", "[lp]") {
+    SECTION("optimal") {
+        Model model;
+        SAIOPT_VAR(model, x);
+        SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, x);
+        SAIOPT_CONSTRAINT(model, floor, x >= 2.0);
+
+        SolveResult result = create_solver(model, "highs")->solve();
+        REQUIRE(result.status == SolveStatus::Optimal);
+        REQUIRE(result.has_solution);
+        REQUIRE(result.value(x) == Approx(2.0));
+    }
+
+    SECTION("infeasible") {
+        Model model;
+        SAIOPT_VAR(model, x);
+        SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, x);
+        SAIOPT_CONSTRAINT(model, floor, x >= 5.0);
+        SAIOPT_CONSTRAINT(model, ceiling, x <= 3.0);
+
+        SolveResult result =
+            create_solver(model, "highs", SolverOptions{}.set_string("presolve", "off"))->solve();
+        REQUIRE(result.status == SolveStatus::Infeasible);
+        REQUIRE_FALSE(result.has_solution);
+        REQUIRE(result.variable_values.empty());
+    }
+
+    SECTION("unbounded") {
+        Model model;
+        SAIOPT_VAR(model, x);
+        SAIOPT_OBJECTIVE(model, ObjectiveSense::Maximize, x);
+        SAIOPT_CONSTRAINT(model, floor, x >= 1.0);
+
+        SolveResult result =
+            create_solver(model, "highs", SolverOptions{}.set_string("presolve", "off"))->solve();
+        REQUIRE(result.status == SolveStatus::Unbounded);
+        REQUIRE_FALSE(result.optimal());
+    }
+
+    SECTION("a MIP stopped by a solution limit still carries its incumbent") {
+        Model model = build_knapsack();
+        SolveResult result =
+            create_solver(model, "highs", SolverOptions{}.set_int("mip_max_improving_sols", 1))
+                ->solve();
+        REQUIRE(result.status == SolveStatus::SolutionLimit);
+        REQUIRE(result.has_solution);
+        REQUIRE(result.variable_values.size() == 40);
+    }
+
+    SECTION("an empty model is trivially optimal") {
+        Model model;
+        SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, LinearExpression{});
+
+        SolveResult result = create_solver(model, "highs")->solve();
+        REQUIRE(result.status == SolveStatus::Optimal);
+        REQUIRE(result.has_solution);
+    }
+
+    SECTION("to_string names every status") {
+        REQUIRE(to_string(SolveStatus::Optimal) == "optimal");
+        REQUIRE(to_string(SolveStatus::InfeasibleOrUnbounded) == "infeasible or unbounded");
+        REQUIRE(to_string(SolveStatus::TimeLimit) == "time limit");
     }
 }

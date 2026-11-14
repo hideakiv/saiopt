@@ -31,7 +31,7 @@ TEST_CASE("solves a simple minimization LP via scip", "[scip]") {
     auto solver = create_solver(model, "scip");
     SolveResult result = solver->solve();
 
-    REQUIRE(result.optimal);
+    REQUIRE(result.optimal());
     REQUIRE(result.objective_value == Approx(10.0));
 }
 
@@ -45,7 +45,7 @@ TEST_CASE("respects integrality on integer variables via scip", "[scip][milp]") 
     auto solver = create_solver(model, "scip");
     SolveResult result = solver->solve();
 
-    REQUIRE(result.optimal);
+    REQUIRE(result.optimal());
     REQUIRE(result.value(x) == Approx(3.0));
 }
 
@@ -63,27 +63,27 @@ TEST_CASE("scip solver mutation methods take effect without re-flattening", "[sc
     REQUIRE(solver->variable_upper(x) == Approx(6.0));
 
     SolveResult r1 = solver->solve();
-    REQUIRE(r1.optimal);
+    REQUIRE(r1.optimal());
     REQUIRE(r1.value(x) == Approx(6.0));  // x maxed out at its cap, cheaper than y
     REQUIRE(r1.value(y) == Approx(4.0));
 
     solver->set_objective_coefficient(x, 5.0);
     solver->set_objective_coefficient(y, 1.0);
     SolveResult r2 = solver->solve();
-    REQUIRE(r2.optimal);
+    REQUIRE(r2.optimal());
     REQUIRE(r2.value(y) == Approx(10.0));  // y now cheaper
     REQUIRE(r2.value(x) == Approx(0.0));
 
     solver->set_variable_upper(y, 4.0);
     SolveResult r3 = solver->solve();
-    REQUIRE(r3.optimal);
+    REQUIRE(r3.optimal());
     REQUIRE(r3.value(y) == Approx(4.0));  // y capped, x fills the rest
     REQUIRE(r3.value(x) == Approx(6.0));
 
     solver->set_variable_kind(x, VarKind::Integer);
     REQUIRE(solver->variable_kind(x) == VarKind::Integer);
     SolveResult r4 = solver->solve();
-    REQUIRE(r4.optimal);
+    REQUIRE(r4.optimal());
 }
 
 TEST_CASE("create_solver applies SCIP-specific options", "[scip]") {
@@ -96,7 +96,7 @@ TEST_CASE("create_solver applies SCIP-specific options", "[scip]") {
         auto solver = create_solver(
             model, "scip", SolverOptions{}.set_double("limits/gap", 0.01).set_bool("display/lpinfo", false));
         SolveResult result = solver->solve();
-        REQUIRE(result.optimal);
+        REQUIRE(result.optimal());
         REQUIRE(result.value(x) == Approx(5.0));
     }
 
@@ -110,7 +110,7 @@ TEST_CASE("create_solver applies SCIP-specific options", "[scip]") {
         // has no separate Longint slot, so set_int must still work for it.
         auto solver = create_solver(model, "scip", SolverOptions{}.set_int("limits/nodes", 100));
         SolveResult result = solver->solve();
-        REQUIRE(result.optimal);
+        REQUIRE(result.optimal());
     }
 }
 
@@ -142,7 +142,7 @@ TEST_CASE("scip progress callback fires and can interrupt, then resolves cleanly
         return true;
     });
     SolveResult full = solver->solve();
-    REQUIRE(full.optimal);
+    REQUIRE(full.optimal());
     REQUIRE(calls > 0);
 
     int interrupted_calls = 0;
@@ -152,13 +152,68 @@ TEST_CASE("scip progress callback fires and can interrupt, then resolves cleanly
         return false;
     });
     SolveResult interrupted = interrupted_solver->solve();
-    REQUIRE_FALSE(interrupted.optimal);
+    REQUIRE_FALSE(interrupted.optimal());
+    REQUIRE(interrupted.status == SolveStatus::Interrupted);
     REQUIRE(interrupted_calls > 0);
 
     // Unlike HighsSolver, re-solving the SAME (interrupted) instance
     // works cleanly and reaches the true optimum.
     interrupted_solver->set_progress_callback({});
     SolveResult resolved = interrupted_solver->solve();
-    REQUIRE(resolved.optimal);
+    REQUIRE(resolved.optimal());
     REQUIRE(resolved.objective_value == Approx(full.objective_value));
+}
+
+TEST_CASE("scip reports a structured status", "[scip]") {
+    SECTION("infeasible") {
+        Model model;
+        SAIOPT_VAR(model, x);
+        SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, x);
+        SAIOPT_CONSTRAINT(model, floor, x >= 5.0);
+        SAIOPT_CONSTRAINT(model, ceiling, x <= 3.0);
+
+        SolveResult result = create_solver(model, "scip")->solve();
+        REQUIRE(result.status == SolveStatus::Infeasible);
+        REQUIRE_FALSE(result.has_solution);
+        REQUIRE(result.variable_values.empty());
+    }
+
+    SECTION("unbounded") {
+        Model model;
+        SAIOPT_VAR(model, x);
+        SAIOPT_OBJECTIVE(model, ObjectiveSense::Maximize, x);
+        SAIOPT_CONSTRAINT(model, floor, x >= 1.0);
+
+        SolveResult result = create_solver(model, "scip")->solve();
+        REQUIRE((result.status == SolveStatus::Unbounded ||
+                 result.status == SolveStatus::InfeasibleOrUnbounded));
+        REQUIRE_FALSE(result.optimal());
+    }
+
+    SECTION("a MIP stopped by a solution limit still carries its incumbent") {
+        // The same multi-constraint knapsack as the progress callback test
+        // above -- a single-constraint one small enough to write inline
+        // gets solved outright in presolve, before any limit can bite.
+        const int n = 80;
+        Model model;
+        std::vector<int> items(n);
+        for (int i = 0; i < n; ++i) items[i] = i;
+        SAIOPT_VARS(model, x, items, .kind = VarKind::Binary);
+
+        LinearExpression value;
+        for (int i : items) value += (1.0 + (i * 53 % 29)) * x[i];
+        SAIOPT_OBJECTIVE(model, ObjectiveSense::Maximize, value);
+
+        for (int k = 0; k < 5; ++k) {
+            LinearExpression weight;
+            for (int i : items) weight += (1.0 + ((i * 37 + k * 17) % 23)) * x[i];
+            model.add_constraint("cap" + std::to_string(k), weight <= 130.0 + k * 11);
+        }
+
+        SolveResult result =
+            create_solver(model, "scip", SolverOptions{}.set_int("limits/solutions", 1))->solve();
+        REQUIRE(result.status == SolveStatus::SolutionLimit);
+        REQUIRE(result.has_solution);
+        REQUIRE(result.variable_values.size() == n);
+    }
 }

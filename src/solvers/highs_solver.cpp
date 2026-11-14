@@ -35,6 +35,41 @@ HighsInt to_highs_integrality(VarKind kind) {
     return kind == VarKind::Continuous ? kHighsVarTypeContinuous : kHighsVarTypeInteger;
 }
 
+SolveStatus to_solve_status(HighsInt model_status) {
+    switch (model_status) {
+        // A model with no columns has nothing to optimize, so it's
+        // trivially solved at its constant objective.
+        case kHighsModelStatusOptimal:
+        case kHighsModelStatusModelEmpty:
+            return SolveStatus::Optimal;
+        case kHighsModelStatusInfeasible:
+            return SolveStatus::Infeasible;
+        case kHighsModelStatusUnbounded:
+            return SolveStatus::Unbounded;
+        case kHighsModelStatusUnboundedOrInfeasible:
+            return SolveStatus::InfeasibleOrUnbounded;
+        case kHighsModelStatusTimeLimit:
+            return SolveStatus::TimeLimit;
+        case kHighsModelStatusIterationLimit:
+            return SolveStatus::IterationLimit;
+        case kHighsModelStatusSolutionLimit:
+            return SolveStatus::SolutionLimit;
+        case kHighsModelStatusObjectiveBound:
+        case kHighsModelStatusObjectiveTarget:
+            return SolveStatus::ObjectiveLimit;
+        case kHighsModelStatusInterrupt:
+            return SolveStatus::Interrupted;
+        case kHighsModelStatusLoadError:
+        case kHighsModelStatusModelError:
+        case kHighsModelStatusPresolveError:
+        case kHighsModelStatusSolveError:
+        case kHighsModelStatusPostsolveError:
+            return SolveStatus::Error;
+        default:
+            return SolveStatus::Unknown;
+    }
+}
+
 // The trampoline HiGHS calls for every event type HighsSolver starts
 // listening for; `user_data` is the HighsSolver instance passed to
 // Highs_setCallback. Builds a solver-agnostic SolverProgress from
@@ -186,7 +221,18 @@ SolveResult HighsSolver::solve() {
 
     SolveResult result;
     HighsInt model_status = Highs_getModelStatus(highs_);
-    result.optimal = (model_status == kHighsModelStatusOptimal);
+    result.status = to_solve_status(model_status);
+
+    // HiGHS fills the solution arrays even when what's in them isn't a
+    // feasible point (e.g. after an interrupted simplex), so gate on its
+    // own primal solution status rather than on the model status alone --
+    // a MIP stopped by a limit can still hold a feasible incumbent. An
+    // empty model is the exception: HiGHS reports no primal solution for
+    // it, but the empty assignment is trivially feasible.
+    HighsInt primal_solution_status = kHighsSolutionStatusNone;
+    Highs_getIntInfoValue(highs_, "primal_solution_status", &primal_solution_status);
+    result.has_solution = (primal_solution_status == kHighsSolutionStatusFeasible ||
+                           model_status == kHighsModelStatusModelEmpty);
 
     std::vector<double> col_value(lp_.num_col);
     std::vector<double> row_value(lp_.num_row);
@@ -194,17 +240,19 @@ SolveResult HighsSolver::solve() {
     std::vector<double> row_dual(lp_.num_row);
     Highs_getSolution(highs_, col_value.data(), col_dual.data(), row_value.data(), row_dual.data());
 
-    for (std::size_t i = 0; i < lp_.col_variable.size(); ++i) {
-        result.variable_values.emplace(lp_.col_variable[i], col_value[i]);
+    if (result.has_solution) {
+        for (std::size_t i = 0; i < lp_.col_variable.size(); ++i) {
+            result.variable_values.emplace(lp_.col_variable[i], col_value[i]);
+        }
+        result.objective_value = Highs_getObjectiveValue(highs_);
     }
-    result.objective_value = Highs_getObjectiveValue(highs_);
 
     // HiGHS only produces meaningful duals/reduced costs/ranging for an
     // LP basis: for a model with any integer/binary column, the dual
     // arrays from Highs_getSolution come back all zero (not the final
     // LP relaxation's values) and Highs_getRanging fails outright, so
     // leave these unset rather than publish misleading zeros.
-    if (result.optimal && is_pure_lp(lp_)) {
+    if (result.optimal() && is_pure_lp(lp_)) {
         for (std::size_t i = 0; i < lp_.col_variable.size(); ++i) {
             result.reduced_costs.emplace(lp_.col_variable[i], col_dual[i]);
         }

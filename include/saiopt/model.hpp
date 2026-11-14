@@ -4,6 +4,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 #include "saiopt/block.hpp"
@@ -19,7 +20,41 @@ struct SensitivityRange {
     double upper = 0.0;
 };
 
-// The primal solution to a solved Model: whether it's optimal, the
+// How a solve() ended. Each backend maps its own native status onto
+// these; one that has no counterpart for a given value (e.g. HiGHS has
+// no gap-limit stop -- reaching mip_rel_gap counts as Optimal there)
+// simply never reports it.
+enum class SolveStatus {
+    Optimal,
+    Infeasible,
+    Unbounded,
+    // Proven to be one or the other, without determining which.
+    InfeasibleOrUnbounded,
+    TimeLimit,
+    // A simplex/IPM iteration limit.
+    IterationLimit,
+    // A branch-and-bound node limit.
+    NodeLimit,
+    // A limit on the number of (improving) solutions found.
+    SolutionLimit,
+    // A MIP gap limit, for a backend that reports reaching one
+    // separately from Optimal.
+    GapLimit,
+    // An objective bound or target value was reached.
+    ObjectiveLimit,
+    MemoryLimit,
+    // Stopped by a progress callback returning false, or by a signal.
+    Interrupted,
+    // The backend failed (on loading, presolve, solve, or postsolve).
+    Error,
+    // Anything else, including a status the backend couldn't determine.
+    Unknown,
+};
+
+std::string_view to_string(SolveStatus status) noexcept;
+std::ostream& operator<<(std::ostream& os, SolveStatus status);
+
+// The primal solution to a solved Model: how the solve ended, the
 // objective value, and the value assigned to every variable across the
 // whole Block tree. Also carries the LP sensitivity information HiGHS
 // computes alongside the solution -- duals, reduced costs, and ranging --
@@ -27,10 +62,16 @@ struct SensitivityRange {
 // variable, these maps are left empty rather than published with the
 // zeroed-out values HiGHS returns for a MILP.
 struct SolveResult {
-    bool optimal = false;
+    SolveStatus status = SolveStatus::Unknown;
+
+    // Whether the backend returned a feasible primal solution -- always
+    // true when status is Optimal, and possibly true when the solve
+    // stopped early (e.g. a MIP that hit TimeLimit with an incumbent).
+    // objective_value and variable_values are only populated when it is;
+    // otherwise objective_value is 0 and variable_values is empty.
+    bool has_solution = false;
     double objective_value = 0.0;
     std::unordered_map<Variable, double> variable_values;
-    std::string status_message;
 
     // Reduced cost of each variable: how much the objective would change
     // per unit increase in that variable's bound, at the margin.
@@ -51,6 +92,8 @@ struct SolveResult {
     // Range each constraint's binding bound can move within while the
     // solved basis stays optimal.
     std::unordered_map<ConstraintRef, SensitivityRange> constraint_bound_ranges;
+
+    bool optimal() const noexcept { return status == SolveStatus::Optimal; }
 
     double value(Variable var) const { return variable_values.at(var); }
     double reduced_cost(Variable var) const { return reduced_costs.at(var); }

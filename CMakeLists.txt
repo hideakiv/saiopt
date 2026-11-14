@@ -18,6 +18,19 @@ endif()
 
 include(FetchContent)
 
+# Builds the `saiopt` Python package's extension module (see python/ and
+# pyproject.toml, through which `pip install .` turns this on). Everything
+# is then linked statically into that one module, so the wheel carries no
+# other shared libraries -- including SCIP's, which otherwise defaults to
+# shared.
+option(SAIOPT_BUILD_PYTHON "Build the saiopt Python extension module" OFF)
+if(SAIOPT_BUILD_PYTHON)
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+  set(SHARED OFF CACHE BOOL "" FORCE)
+  set(SAIOPT_WITH_HIGHS ON CACHE BOOL "" FORCE)
+  set(SAIOPT_WITH_SCIP ON CACHE BOOL "" FORCE)
+endif()
+
 # The core library is solver-agnostic: it only depends on the abstract
 # Solver interface (include/saiopt/solver.hpp), never on a concrete
 # backend such as HiGHS.
@@ -131,4 +144,8 @@ endif()
 
 if(SAIOPT_BUILD_TESTS)
   add_subdirectory(tests)
+endif()
+
+if(SAIOPT_BUILD_PYTHON)
+  add_subdirectory(python)
 endif()

@@ -41,6 +41,55 @@ Other examples: `blocks_basics`, `indexed_macros`, `hierarchical_facilities`,
 `transportation`, `solver_mutation`, `jagged_index`, and `variable_lookup`
 -- see `examples/` for what each demonstrates.
 
+## Python
+
+`pip install .` builds the `saiopt` Python package (Python 3.9+): the C++
+library, both backends, and HiGHS/SCIP themselves, linked into one
+extension module with nanobind. The first build compiles HiGHS and SCIP
+and takes a while; later ones reuse `build-python/`. Run its tests with
+`pip install .[test]` and then `pytest`.
+
+The Python API mirrors the C++ one -- `add_var`/`add_vars`,
+`add_constraint`/`add_constraints`, `add_block`/`add_blocks`, the same
+lookups, `create_solver`, `Solver`, `SolveResult` -- with keyword
+arguments in place of the macros' designated initializers:
+
+```python
+import itertools
+import saiopt as so
+
+model = so.Model()
+arcs = list(itertools.product(["W1", "W2"], [1, 2]))
+ship = model.add_vars("ship", arcs, bounds=(0, so.inf))  # dict: key -> Variable
+model.add_constraints("demand", [1, 2], lambda c: ship["W1", c] + ship["W2", c] >= 5)
+model.set_objective(so.ObjectiveSense.Minimize, so.quicksum(ship.values()))
+
+solver = so.create_solver(model, "highs", {"time_limit": 30.0})
+result = solver.solve()
+print(result.status, result.objective_value, result.values(ship))
+```
+
+A few things differ from C++, because Python works differently:
+
+- A two-sided range is `so.Constraint(expr, lower, upper)`. Python
+  evaluates `lower <= expr <= upper` as two separate comparisons joined
+  by `and`, which can't be one constraint -- so a constraint has no truth
+  value, and that spelling raises instead of silently dropping a bound.
+- `x == y` builds a constraint, but its truth value is whether `x` and `y`
+  are the same variable, so `Variable` still works as a dict key. Use
+  `x.is_same(y)` to compare two handles directly.
+- Use `so.quicksum(terms)` for long sums: the built-in `sum()` copies the
+  running total on every addition. `expr += term` also adds in place.
+- `add_block(name, block)` moves `block` into the parent; the old handle
+  can't be used afterward, and the call returns a handle to the attached
+  child instead (as does `parent.block(name)`).
+- Index keys can be any mutually comparable Python values (tuples for
+  multi-dimensional ones), named `name[key]` the same way C++ names them.
+- `so.inf` (`1e30`) is saiopt's infinite bound; `math.inf` is accepted too.
+- `solve()` releases the GIL. A progress callback may return `None` to
+  keep going, and an exception it raises stops the solve and is re-raised
+  from `solve()`.
+
 ## MPI
 
 `Block::serialize()`/`Block::deserialize()` turn a `Block` (with its whole

@@ -1,0 +1,35 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "nanobind>=2.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "saiopt"
+version = "0.1.0"
+description = "Structured Algebraic Interface for Optimization: composable LP/MILP/QP models solved with HiGHS or SCIP"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+wheel.packages = ["python/saiopt"]
+# Only saiopt's own install rules: HiGHS and SCIP, built in the same tree,
+# have install rules of their own (headers, CLI binaries, CMake config)
+# that don't belong in a wheel.
+install.components = ["python"]
+build.targets = ["_saiopt", "_saiopt_stub"]
+# Kept between builds, so reinstalling after a change only rebuilds what
+# changed rather than all of HiGHS and SCIP again.
+build-dir = "build-python/{wheel_tag}"
+
+[tool.scikit-build.cmake.define]
+SAIOPT_BUILD_PYTHON = "ON"
+SAIOPT_BUILD_TESTS = "OFF"
+SAIOPT_BUILD_EXAMPLES = "OFF"
+SAIOPT_WITH_MPI = "OFF"
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]

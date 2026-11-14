@@ -4,3 +4,6 @@ _build/
 compile_commands.json
 .vscode/
 .idea/
+build-python/
+__pycache__/
+*.egg-info/

@@ -60,13 +60,9 @@ std::string relative_label(const std::unordered_map<Variable, std::string>& labe
     return full;
 }
 
-std::string format_expression(const LinearExpression& expr,
-                               const std::unordered_map<Variable, std::string>& labels) {
-    std::vector<std::pair<std::string, double>> terms;
-    terms.reserve(expr.terms().size());
-    for (const auto& [var, coeff] : expr.terms()) {
-        if (coeff != 0.0) terms.emplace_back(label_of(labels, var), coeff);
-    }
+// Joins already-labeled `terms` (sorted by label) into "a + 2 b - c",
+// followed by `constant` when it's nonzero or there are no terms at all.
+std::string format_terms(std::vector<std::pair<std::string, double>> terms, double constant) {
     std::sort(terms.begin(), terms.end(),
               [](const auto& a, const auto& b) { return a.first < b.first; });
 
@@ -85,26 +81,68 @@ std::string format_expression(const LinearExpression& expr,
         first = false;
     }
 
-    double c = expr.constant();
-    if (c != 0.0 || first) {
+    if (constant != 0.0 || first) {
         if (first) {
-            oss << c;
+            oss << constant;
         } else {
-            oss << (c < 0.0 ? " - " : " + ") << std::abs(c);
+            oss << (constant < 0.0 ? " - " : " + ") << std::abs(constant);
         }
     }
     return oss.str();
 }
 
+std::vector<std::pair<std::string, double>> labeled_terms(
+    const LinearExpression& expr, const std::unordered_map<Variable, std::string>& labels) {
+    std::vector<std::pair<std::string, double>> terms;
+    terms.reserve(expr.terms().size());
+    for (const auto& [var, coeff] : expr.terms()) {
+        if (coeff != 0.0) terms.emplace_back(label_of(labels, var), coeff);
+    }
+    return terms;
+}
+
+std::string format_expression(const LinearExpression& expr,
+                               const std::unordered_map<Variable, std::string>& labels) {
+    return format_terms(labeled_terms(expr, labels), expr.constant());
+}
+
+// Quadratic terms ("x^2", "x*y", their two labels in sorted order) come
+// first, then the linear ones, then the constant.
+std::string format_expression(const QuadraticExpression& expr,
+                               const std::unordered_map<Variable, std::string>& labels) {
+    std::vector<std::pair<std::string, double>> quadratic;
+    for (const auto& [pair, coeff] : expr.quadratic_terms()) {
+        if (coeff == 0.0) continue;
+        std::string a = label_of(labels, pair.first());
+        std::string b = label_of(labels, pair.second());
+        if (pair.first() == pair.second()) {
+            quadratic.emplace_back(a + "^2", coeff);
+        } else {
+            quadratic.emplace_back(a < b ? a + "*" + b : b + "*" + a, coeff);
+        }
+    }
+    std::vector<std::pair<std::string, double>> linear = labeled_terms(expr.linear(), labels);
+    if (quadratic.empty()) return format_terms(std::move(linear), expr.constant());
+
+    std::string head = format_terms(std::move(quadratic), 0.0);
+    if (linear.empty() && expr.constant() == 0.0) return head;
+    std::string tail = format_terms(std::move(linear), expr.constant());
+    return tail.front() == '-' ? head + " - " + tail.substr(1) : head + " + " + tail;
+}
+
 // Same as format_expression, but each variable is named relative to
 // `prefix` instead of by its globally qualified label -- see
 // relative_label above.
-std::string format_expression_relative(const LinearExpression& expr,
+std::string format_expression_relative(const QuadraticExpression& expr,
                                         const std::unordered_map<Variable, std::string>& labels,
                                         const std::string& prefix) {
     std::unordered_map<Variable, std::string> relative;
-    for (const auto& [var, coeff] : expr.terms()) {
+    for (const auto& [var, coeff] : expr.linear().terms()) {
         relative.emplace(var, relative_label(labels, var, prefix));
+    }
+    for (const auto& [pair, coeff] : expr.quadratic_terms()) {
+        relative.emplace(pair.first(), relative_label(labels, pair.first(), prefix));
+        relative.emplace(pair.second(), relative_label(labels, pair.second(), prefix));
     }
     return format_expression(expr, relative);
 }
@@ -203,7 +241,8 @@ std::vector<std::string> Model::format_total_objective_lines(const Block& block,
         }
     };
 
-    if (!block.objective_.terms().empty() || block.objective_.constant() != 0.0) {
+    if (!block.objective_.linear().terms().empty() || !block.objective_.quadratic_terms().empty() ||
+        block.objective_.constant() != 0.0) {
         append(sign(false) + format_expression_relative(block.objective_, labels, prefix));
     }
 

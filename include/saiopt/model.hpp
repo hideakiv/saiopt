@@ -56,11 +56,13 @@ std::ostream& operator<<(std::ostream& os, SolveStatus status);
 
 // The primal solution to a solved Model: how the solve ended, the
 // objective value, and the value assigned to every variable across the
-// whole Block tree. Also carries the LP sensitivity information HiGHS
+// whole Block tree. Also carries the sensitivity information HiGHS
 // computes alongside the solution -- duals, reduced costs, and ranging --
-// which only exist for an LP basis: if the model has any integer/binary
-// variable, these maps are left empty rather than published with the
-// zeroed-out values HiGHS returns for a MILP.
+// which only exist without integer/binary variables: for a MILP these
+// maps are left empty rather than published with the zeroed-out values
+// HiGHS returns for one. A continuous QP gets duals and reduced costs
+// (its KKT multipliers) but no ranging, which is a property of an LP
+// basis.
 struct SolveResult {
     SolveStatus status = SolveStatus::Unknown;
 
@@ -197,7 +199,7 @@ public:
     // own API always transfers ownership of one rather than copying it.
     Block to_block() && { return std::move(static_cast<Block&>(*this)); }
 
-    void set_objective(ObjectiveSense sense, LinearExpression expr) {
+    void set_objective(ObjectiveSense sense, QuadraticExpression expr) {
         sense_ = sense;
         Block::set_objective(std::move(expr));
     }

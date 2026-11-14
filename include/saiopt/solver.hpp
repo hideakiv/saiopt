@@ -108,7 +108,9 @@ public:
     virtual ~Solver() = default;
     virtual SolveResult solve() = 0;
 
-    // Objective coefficient of `var` in the flattened LP.
+    // Linear objective coefficient of `var` in the flattened model -- for
+    // a quadratic objective, the coefficient of its linear part only;
+    // its quadratic terms can't be changed through the Solver.
     virtual double objective_coefficient(Variable var) const = 0;
     virtual void set_objective_coefficient(Variable var, double coeff) = 0;
 

@@ -29,7 +29,7 @@ ConstraintRef Block::add_constraint(std::string name, Constraint constraint) {
     return ref;
 }
 
-void Block::set_objective(LinearExpression expr) { objective_ = std::move(expr); }
+void Block::set_objective(QuadraticExpression expr) { objective_ = std::move(expr); }
 
 BlockRef Block::add_block(std::string name, Block child) {
     return add_block_scaled(std::move(name), std::move(child), 1.0);
@@ -198,17 +198,39 @@ Variable resolve_var_ref(const std::vector<Variable>& own_vars,
     return resolve_var_ref(next.own_vars, next.children, path, path_pos + 1, var_index);
 }
 
+Variable read_var_ref(Reader& reader, const std::vector<Variable>& own_vars,
+                      const std::vector<RebuiltBlock>& children) {
+    std::uint64_t path_len = reader.read_u64();
+    std::vector<std::uint64_t> path(static_cast<std::size_t>(path_len));
+    for (auto& p : path) p = reader.read_u64();
+    std::uint64_t var_index = reader.read_u64();
+    return resolve_var_ref(own_vars, children, path, 0, var_index);
+}
+
 LinearExpression read_expression(Reader& reader, const std::vector<Variable>& own_vars,
                                   const std::vector<RebuiltBlock>& children) {
     LinearExpression expr(reader.read_f64());
     std::uint64_t num_terms = reader.read_u64();
     for (std::uint64_t i = 0; i < num_terms; ++i) {
-        std::uint64_t path_len = reader.read_u64();
-        std::vector<std::uint64_t> path(static_cast<std::size_t>(path_len));
-        for (auto& p : path) p = reader.read_u64();
-        std::uint64_t var_index = reader.read_u64();
+        Variable var = read_var_ref(reader, own_vars, children);
         double coeff = reader.read_f64();
-        expr.set_coefficient(resolve_var_ref(own_vars, children, path, 0, var_index), coeff);
+        expr.set_coefficient(var, coeff);
+    }
+    return expr;
+}
+
+// A linear expression (see read_expression), followed by its quadratic
+// terms: a count, then each term's two variable references and its
+// coefficient.
+QuadraticExpression read_quadratic_expression(Reader& reader, const std::vector<Variable>& own_vars,
+                                              const std::vector<RebuiltBlock>& children) {
+    QuadraticExpression expr(read_expression(reader, own_vars, children));
+    std::uint64_t num_terms = reader.read_u64();
+    for (std::uint64_t i = 0; i < num_terms; ++i) {
+        Variable a = read_var_ref(reader, own_vars, children);
+        Variable b = read_var_ref(reader, own_vars, children);
+        double coeff = reader.read_f64();
+        expr.set_coefficient(a, b, coeff);
     }
     return expr;
 }
@@ -253,7 +275,7 @@ RebuiltBlock read_block(Reader& reader) {
         block.add_constraint(std::move(name), Constraint(std::move(expr), lower, upper));
     }
 
-    block.set_objective(read_expression(reader, own_vars, children));
+    block.set_objective(read_quadratic_expression(reader, own_vars, children));
 
     for (std::size_t i = 0; i < children.size(); ++i) {
         block.add_block_scaled(child_names[i], std::move(children[i].block), child_multipliers[i]);
@@ -264,20 +286,35 @@ RebuiltBlock read_block(Reader& reader) {
 
 }  // namespace
 
+void Block::write_var_ref(std::vector<std::byte>& out, const Block& block, Variable var) {
+    std::vector<std::uint64_t> path;
+    if (!find_var_path(block, var, path)) {
+        throw std::runtime_error(
+            "Block::serialize: a constraint or objective references a variable outside "
+            "this block's own subtree");
+    }
+    append_u64(out, path.size());
+    for (std::uint64_t p : path) append_u64(out, p);
+    append_u64(out, var.index());
+}
+
 void Block::write_expression(std::vector<std::byte>& out, const Block& block,
                               const LinearExpression& expr) {
     append_f64(out, expr.constant());
     append_u64(out, expr.terms().size());
     for (const auto& [var, coeff] : expr.terms()) {
-        std::vector<std::uint64_t> path;
-        if (!find_var_path(block, var, path)) {
-            throw std::runtime_error(
-                "Block::serialize: a constraint or objective references a variable outside "
-                "this block's own subtree");
-        }
-        append_u64(out, path.size());
-        for (std::uint64_t p : path) append_u64(out, p);
-        append_u64(out, var.index());
+        write_var_ref(out, block, var);
+        append_f64(out, coeff);
+    }
+}
+
+void Block::write_quadratic_expression(std::vector<std::byte>& out, const Block& block,
+                                       const QuadraticExpression& expr) {
+    write_expression(out, block, expr.linear());
+    append_u64(out, expr.quadratic_terms().size());
+    for (const auto& [pair, coeff] : expr.quadratic_terms()) {
+        write_var_ref(out, block, pair.first());
+        write_var_ref(out, block, pair.second());
         append_f64(out, coeff);
     }
 }
@@ -315,7 +352,7 @@ void Block::write_block(std::vector<std::byte>& out, const Block& block) {
         write_expression(out, block, c.expression());
     }
 
-    write_expression(out, block, block.objective_);
+    write_quadratic_expression(out, block, block.objective_);
 }
 
 std::vector<std::byte> Block::serialize() const {

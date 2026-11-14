@@ -1,6 +1,7 @@
 #include "saiopt/solvers/scip_solver.hpp"
 
 #include <scip/scip.h>
+#include <scip/cons_nonlinear.h>
 #include <scip/scipdefplugins.h>
 
 #include <algorithm>
@@ -243,6 +244,42 @@ ScipSolver::ScipSolver(const Model& model, const SolverOptions& options) : lp_(f
             scip_conss_.push_back(cons);
             check(SCIPreleaseCons(scip, &cons), "SCIPreleaseCons");
         }
+
+        if (lp_.has_quadratic_objective()) {
+            SCIP_VAR* t = nullptr;
+            check(SCIPcreateVarBasic(scip, &t, "#objective", -SCIPinfinity(scip), SCIPinfinity(scip), 1.0,
+                                      SCIP_VARTYPE_CONTINUOUS),
+                  "SCIPcreateVarBasic");
+            check(SCIPaddVar(scip, t), "SCIPaddVar");
+            objective_var_ = t;
+
+            // Back from the Hessian's 1/2 x'Qx to one coefficient per
+            // term: Q_ij * x_i * x_j off the diagonal, Q_ii / 2 * x_i^2 on it.
+            std::vector<SCIP_VAR*> quad_vars1;
+            std::vector<SCIP_VAR*> quad_vars2;
+            std::vector<double> quad_coefs;
+            for (std::size_t col = 0; col < num_col; ++col) {
+                for (std::int64_t idx = lp_.q_start[col]; idx < lp_.q_start[col + 1]; ++idx) {
+                    std::size_t row = static_cast<std::size_t>(lp_.q_index[static_cast<std::size_t>(idx)]);
+                    double value = lp_.q_value[static_cast<std::size_t>(idx)];
+                    quad_vars1.push_back(as_var(scip_vars_[row]));
+                    quad_vars2.push_back(as_var(scip_vars_[col]));
+                    quad_coefs.push_back(row == col ? value / 2.0 : value);
+                }
+            }
+            SCIP_VAR* lin_var = t;
+            double lin_coef = -1.0;
+            bool minimize = lp_.sense == 1;
+            SCIP_CONS* cons = nullptr;
+            check(SCIPcreateConsBasicQuadraticNonlinear(
+                      scip, &cons, "#objective_epigraph", 1, &lin_var, &lin_coef,
+                      static_cast<int>(quad_coefs.size()), quad_vars1.data(), quad_vars2.data(), quad_coefs.data(),
+                      minimize ? -SCIPinfinity(scip) : 0.0, minimize ? 0.0 : SCIPinfinity(scip)),
+                  "SCIPcreateConsBasicQuadraticNonlinear");
+            check(SCIPaddCons(scip, cons), "SCIPaddCons");
+            check(SCIPreleaseCons(scip, &cons), "SCIPreleaseCons");
+            check(SCIPreleaseVar(scip, &t), "SCIPreleaseVar");
+        }
     } catch (...) {
         // A throwing constructor's destructor never runs, so scip_ would
         // otherwise leak here -- clean it up ourselves before propagating.
@@ -264,6 +301,7 @@ ScipSolver::ScipSolver(ScipSolver&& other) noexcept
       lp_(std::move(other.lp_)),
       scip_vars_(std::move(other.scip_vars_)),
       scip_conss_(std::move(other.scip_conss_)),
+      objective_var_(other.objective_var_),
       var_column_(std::move(other.var_column_)),
       constraint_row_(std::move(other.constraint_row_)),
       coefficient_overrides_(std::move(other.coefficient_overrides_)),
@@ -285,6 +323,7 @@ ScipSolver& ScipSolver::operator=(ScipSolver&& other) noexcept {
         lp_ = std::move(other.lp_);
         scip_vars_ = std::move(other.scip_vars_);
         scip_conss_ = std::move(other.scip_conss_);
+        objective_var_ = other.objective_var_;
         var_column_ = std::move(other.var_column_);
         constraint_row_ = std::move(other.constraint_row_);
         coefficient_overrides_ = std::move(other.coefficient_overrides_);
@@ -403,6 +442,25 @@ void ScipSolver::set_initial_solution(const std::unordered_map<Variable, double>
     for (std::size_t i = 0; i < columns.size(); ++i) {
         SCIP_RETCODE rc = SCIPsetSolVal(scip, sol, as_var(scip_vars_[static_cast<std::size_t>(columns[i])]),
                                         col_values[i]);
+        if (rc != SCIP_OKAY) {
+            SCIPfreeSol(scip, &sol);
+            check(rc, "SCIPsetSolVal");
+        }
+    }
+    if (!partial && objective_var_ != nullptr) {
+        // A complete start still leaves the epigraph variable unset, which
+        // would make it look infeasible -- give it q(x) exactly.
+        std::vector<double> x(scip_vars_.size(), 0.0);
+        for (std::size_t i = 0; i < columns.size(); ++i) x[static_cast<std::size_t>(columns[i])] = col_values[i];
+        double q = 0.0;
+        for (std::size_t col = 0; col < x.size(); ++col) {
+            for (std::int64_t idx = lp_.q_start[col]; idx < lp_.q_start[col + 1]; ++idx) {
+                std::size_t row = static_cast<std::size_t>(lp_.q_index[static_cast<std::size_t>(idx)]);
+                double value = lp_.q_value[static_cast<std::size_t>(idx)];
+                q += (row == col ? value / 2.0 : value) * x[row] * x[col];
+            }
+        }
+        SCIP_RETCODE rc = SCIPsetSolVal(scip, sol, as_var(objective_var_), q);
         if (rc != SCIP_OKAY) {
             SCIPfreeSol(scip, &sol);
             check(rc, "SCIPsetSolVal");

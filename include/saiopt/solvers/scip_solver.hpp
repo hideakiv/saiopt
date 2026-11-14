@@ -22,6 +22,11 @@ namespace saiopt {
 // legal, so those setters call SCIPfreeTransform() first if a solve has
 // already happened -- SCIP itself (unlike HiGHS) then resolves cleanly
 // from scratch on the next solve() with no leftover stuck state.
+//
+// A quadratic objective is solved to global optimality whether or not
+// it's convex, and may be combined with integer/binary variables. SCIP
+// models it with one extra variable and constraint (see objective_var_),
+// which a written model file (write_model) includes too.
 class ScipSolver : public Solver {
 public:
     // Throws std::runtime_error if `model` has no objective, references
@@ -107,6 +112,15 @@ private:
     // right after creation (SCIP's own standard ownership idiom).
     std::vector<void*> scip_vars_;   // SCIP_VAR*
     std::vector<void*> scip_conss_;  // SCIP_CONS*
+
+    // SCIP's objective must be linear, so a quadratic one q(x) is
+    // modeled by its epigraph instead: a free variable t carries the
+    // whole quadratic part as its objective coefficient of 1, tied to
+    // q(x) by one nonlinear constraint (q(x) - t <= 0 when minimizing,
+    // >= 0 when maximizing), which optimizing t drives onto equality.
+    // Null for a linear objective. Neither appears in scip_vars_ /
+    // scip_conss_, so columns and rows still line up with lp_.
+    void* objective_var_ = nullptr;  // SCIP_VAR*
     std::unordered_map<Variable, std::int64_t> var_column_;
     std::unordered_map<ConstraintRef, std::int64_t> constraint_row_;
 

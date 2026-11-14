@@ -20,6 +20,15 @@ namespace saiopt {
 // Block tree on every call. The coefficient/bound accessors act directly
 // on that live HiGHS instance (via its change-coefficient C API), so
 // they too skip re-flattening.
+//
+// A quadratic objective must be convex (minimizing) or concave
+// (maximizing), with every variable continuous. HiGHS doesn't check
+// convexity: given a nonconvex objective it can stop at a stationary
+// point and report it as Optimal -- e.g. x * y over [-1, 1]^2 "solves" to
+// 0 at the origin, though the true minimum is -1 -- so use the "scip"
+// backend for those. A quadratic objective with any integer/binary
+// variable throws std::runtime_error, both from the constructor and from
+// set_variable_kind, since HiGHS can't solve it at all.
 class HighsSolver : public Solver {
 public:
     // Throws std::runtime_error if `model` has no objective, references

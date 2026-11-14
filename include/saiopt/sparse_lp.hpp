@@ -25,6 +25,16 @@ struct SparseLp {
     std::vector<double> a_value;
 
     std::vector<double> col_cost;
+
+    // The objective's quadratic part, if any, as the Hessian Q of
+    // c'x + 1/2 x'Qx: its lower triangle, column-wise (CSC) -- column j
+    // holds entries for rows i >= j, so a term q * x_i * x_j (i != j)
+    // becomes Q_ij = q and a square q * x_i^2 becomes Q_ii = 2q. All
+    // three are empty for a linear objective; otherwise q_start has
+    // num_col + 1 entries.
+    std::vector<std::int64_t> q_start;
+    std::vector<std::int64_t> q_index;
+    std::vector<double> q_value;
     std::vector<double> col_lower;
     std::vector<double> col_upper;
     std::vector<VarKind> col_kind;
@@ -50,6 +60,8 @@ struct SparseLp {
     // HiGHS objective sense: +1 minimize, -1 maximize.
     int sense = 1;
     double offset = 0.0;
+
+    bool has_quadratic_objective() const noexcept { return !q_value.empty(); }
 };
 
 SparseLp flatten(const Model& model);

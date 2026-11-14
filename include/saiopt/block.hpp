@@ -136,8 +136,9 @@ public:
     // Set this block's own local objective contribution. Only meaningful
     // once the block is (transitively) attached to a Model, which combines
     // it with every other attached block's contribution, each scaled by
-    // the multiplier it was attached with.
-    void set_objective(LinearExpression expr);
+    // the multiplier it was attached with. May be quadratic (see
+    // QuadraticExpression); a LinearExpression or Variable converts.
+    void set_objective(QuadraticExpression expr);
 
     // Move `child` into this block's tree with a multiplier of 1.0, under
     // `name` so it can later be reached with block(name). See
@@ -457,13 +458,16 @@ private:
 
     // Appends `block`'s wire encoding (see serialize()) onto `out`.
     static void write_block(std::vector<std::byte>& out, const Block& block);
+    static void write_var_ref(std::vector<std::byte>& out, const Block& block, Variable var);
+    static void write_quadratic_expression(std::vector<std::byte>& out, const Block& block,
+                                           const QuadraticExpression& expr);
     static void write_expression(std::vector<std::byte>& out, const Block& block,
                                   const LinearExpression& expr);
 
     BlockId id_;
     std::vector<VarData> vars_;
     std::vector<ConstraintData> constraints_;
-    LinearExpression objective_;
+    QuadraticExpression objective_;
     std::vector<ChildBlock> children_;
     std::unordered_map<std::string, Variable> var_names_;
     std::unordered_map<std::string, ConstraintRef> constraint_names_;

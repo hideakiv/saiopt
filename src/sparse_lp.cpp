@@ -1,5 +1,6 @@
 #include "saiopt/sparse_lp.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <cstring>
 #include <functional>
@@ -109,9 +110,14 @@ private:
             constraints_.push_back(std::move(fc));
         }
 
-        for (const auto& [var, coeff] : block.objective_.terms()) {
+        for (const auto& [var, coeff] : block.objective_.linear().terms()) {
             (void)coeff;
             resolve(var);
+        }
+        for (const auto& [pair, coeff] : block.objective_.quadratic_terms()) {
+            (void)coeff;
+            resolve(pair.first());
+            resolve(pair.second());
         }
         objective_ += block.objective_ * scale;
 
@@ -129,8 +135,34 @@ private:
         lp.num_row = static_cast<std::int64_t>(constraints_.size());
 
         lp.col_cost.assign(num_col, 0.0);
-        for (const auto& [var, coeff] : objective_.terms()) {
+        for (const auto& [var, coeff] : objective_.linear().terms()) {
             lp.col_cost[static_cast<std::size_t>(columns_.at(var))] += coeff;
+        }
+
+        // Lower-triangular Hessian, column by column -- see SparseLp::q_start.
+        std::vector<std::map<std::int64_t, double>> hessian_columns(num_col);
+        bool any_quadratic = false;
+        for (const auto& [pair, coeff] : objective_.quadratic_terms()) {
+            if (coeff == 0.0) continue;
+            std::int64_t a = columns_.at(pair.first());
+            std::int64_t b = columns_.at(pair.second());
+            std::int64_t row = std::max(a, b);
+            std::int64_t col = std::min(a, b);
+            hessian_columns[static_cast<std::size_t>(col)][row] += (a == b ? 2.0 * coeff : coeff);
+            any_quadratic = true;
+        }
+        if (any_quadratic) {
+            lp.q_start.reserve(num_col + 1);
+            lp.q_start.push_back(0);
+            for (const auto& column : hessian_columns) {
+                for (const auto& [row, value] : column) {
+                    if (value == 0.0) continue;
+                    lp.q_index.push_back(row);
+                    lp.q_value.push_back(value);
+                }
+                lp.q_start.push_back(static_cast<std::int64_t>(lp.q_index.size()));
+            }
+            if (lp.q_value.empty()) lp.q_start.clear();
         }
         lp.offset = objective_.constant();
         lp.sense = (*model.sense_ == ObjectiveSense::Maximize) ? -1 : 1;
@@ -183,7 +215,7 @@ private:
     std::vector<std::string> var_names_;
     std::unordered_map<BlockId, std::unordered_set<BlockId>> descendants_;
     std::vector<FlatConstraint> constraints_;
-    LinearExpression objective_;
+    QuadraticExpression objective_;
 };
 
 SparseLp flatten(const Model& model) { return ModelFlattener::flatten(model); }

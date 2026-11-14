@@ -102,6 +102,23 @@ auto solver = create_solver(model, "highs");
 SolveResult result = solver->solve();
 ```
 
+An objective may also be quadratic: multiplying two linear expressions
+gives a `QuadraticExpression`, which `set_objective` (and
+`SAIOPT_OBJECTIVE`) accepts anywhere a linear one goes -- on the root or
+on any sub-block, scaled by its multiplier like any other contribution.
+Constraints stay linear, so `x * y <= 3` doesn't compile:
+
+```cpp
+SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, (x - 2.0) * (x - 2.0) + 3.0 * x * y);
+```
+
+`"highs"` solves a convex quadratic objective (concave when
+maximizing) with continuous variables only: it throws for one with any
+integer variable, and since it doesn't check convexity, a nonconvex one
+can come back labeled optimal at a mere stationary point. `"scip"`
+solves any quadratic objective to global optimality, with or without
+integer variables.
+
 `SAIOPT_VAR`/`SAIOPT_VARS` never spell out a `VariableDef` -- `kind` and
 `bounds` are optional, keyword-style (C++20 designated initializers),
 independent of each other:

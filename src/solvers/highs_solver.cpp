@@ -30,6 +30,15 @@ bool is_pure_lp(const SparseLp& lp) {
                         [](VarKind kind) { return kind == VarKind::Continuous; });
 }
 
+// HiGHS solves continuous QPs only -- given a quadratic objective with
+// any integer column, it returns no solution and an unknown status --
+// so refuse that combination up front with a message that says why.
+[[noreturn]] void throw_unsupported_miqp() {
+    throw std::runtime_error(
+        "HiGHS can't solve a quadratic objective with integer or binary variables; "
+        "use the \"scip\" backend instead");
+}
+
 // HiGHS has no separate "binary" integrality -- a binary variable is just
 // an integer one with [0, 1] bounds, so saiopt's own VarKind (which does
 // distinguish them, for lp_.col_kind and is_pure_lp) collapses to this.
@@ -150,6 +159,7 @@ double bound_tolerance(double bound) { return 1e-6 * std::max(1.0, std::abs(boun
 }  // namespace
 
 HighsSolver::HighsSolver(const Model& model, const SolverOptions& options) : lp_(flatten(model)) {
+    if (lp_.has_quadratic_objective() && !is_pure_lp(lp_)) throw_unsupported_miqp();
     highs_ = Highs_create();
     try {
         Highs_setBoolOptionValue(highs_, "output_flag", 0);
@@ -167,6 +177,18 @@ HighsSolver::HighsSolver(const Model& model, const SolverOptions& options) : lp_
 
         if (status != 0) {
             throw std::runtime_error("HiGHS rejected the model (Highs_passLp failed)");
+        }
+
+        if (lp_.has_quadratic_objective()) {
+            // HiGHS takes q_start without SparseLp's trailing end marker.
+            std::vector<HighsInt> q_start = to_highs_int(lp_.q_start);
+            q_start.pop_back();
+            std::vector<HighsInt> q_index = to_highs_int(lp_.q_index);
+            if (Highs_passHessian(highs_, static_cast<HighsInt>(lp_.num_col),
+                                  static_cast<HighsInt>(lp_.q_value.size()), kHighsHessianFormatTriangular,
+                                  q_start.data(), q_index.data(), lp_.q_value.data()) == kHighsStatusError) {
+                throw std::runtime_error("HiGHS rejected the quadratic objective (Highs_passHessian failed)");
+            }
         }
 
         for (std::size_t i = 0; i < lp_.col_kind.size(); ++i) {
@@ -264,11 +286,12 @@ SolveResult HighsSolver::solve() {
         result.objective_value = Highs_getObjectiveValue(highs_);
     }
 
-    // HiGHS only produces meaningful duals/reduced costs/ranging for an
-    // LP basis: for a model with any integer/binary column, the dual
-    // arrays from Highs_getSolution come back all zero (not the final
-    // LP relaxation's values) and Highs_getRanging fails outright, so
-    // leave these unset rather than publish misleading zeros.
+    // HiGHS only produces meaningful duals/reduced costs for a model with
+    // no integer/binary column (an LP, or a continuous QP, whose duals
+    // are its KKT multipliers): for a MILP the dual arrays from
+    // Highs_getSolution come back all zero (not the final LP relaxation's
+    // values), so leave these unset rather than publish misleading zeros.
+    // Ranging is a property of an LP basis, so a QP doesn't get it either.
     if (result.optimal() && is_pure_lp(lp_)) {
         for (std::size_t i = 0; i < lp_.col_variable.size(); ++i) {
             result.reduced_costs.emplace(lp_.col_variable[i], col_dual[i]);
@@ -276,29 +299,31 @@ SolveResult HighsSolver::solve() {
         for (std::size_t i = 0; i < lp_.row_constraint.size(); ++i) {
             result.duals.emplace(lp_.row_constraint[i], row_dual[i]);
         }
-        std::vector<double> col_cost_up(lp_.num_col);
-        std::vector<double> col_cost_dn(lp_.num_col);
-        std::vector<double> col_bound_up(lp_.num_col);
-        std::vector<double> col_bound_dn(lp_.num_col);
-        std::vector<double> row_bound_up(lp_.num_row);
-        std::vector<double> row_bound_dn(lp_.num_row);
+        if (!lp_.has_quadratic_objective()) {
+            std::vector<double> col_cost_up(lp_.num_col);
+            std::vector<double> col_cost_dn(lp_.num_col);
+            std::vector<double> col_bound_up(lp_.num_col);
+            std::vector<double> col_bound_dn(lp_.num_col);
+            std::vector<double> row_bound_up(lp_.num_row);
+            std::vector<double> row_bound_dn(lp_.num_row);
 
-        HighsInt ranging_status = Highs_getRanging(
-            highs_, col_cost_up.data(), nullptr, nullptr, nullptr, col_cost_dn.data(), nullptr,
-            nullptr, nullptr, col_bound_up.data(), nullptr, nullptr, nullptr,
-            col_bound_dn.data(), nullptr, nullptr, nullptr, row_bound_up.data(), nullptr,
-            nullptr, nullptr, row_bound_dn.data(), nullptr, nullptr, nullptr);
+            HighsInt ranging_status = Highs_getRanging(
+                highs_, col_cost_up.data(), nullptr, nullptr, nullptr, col_cost_dn.data(), nullptr,
+                nullptr, nullptr, col_bound_up.data(), nullptr, nullptr, nullptr,
+                col_bound_dn.data(), nullptr, nullptr, nullptr, row_bound_up.data(), nullptr,
+                nullptr, nullptr, row_bound_dn.data(), nullptr, nullptr, nullptr);
 
-        if (ranging_status == kHighsStatusOk) {
-            for (std::size_t i = 0; i < lp_.col_variable.size(); ++i) {
-                result.objective_coefficient_ranges.emplace(
-                    lp_.col_variable[i], SensitivityRange{col_cost_dn[i], col_cost_up[i]});
-                result.variable_bound_ranges.emplace(
-                    lp_.col_variable[i], SensitivityRange{col_bound_dn[i], col_bound_up[i]});
-            }
-            for (std::size_t i = 0; i < lp_.row_constraint.size(); ++i) {
-                result.constraint_bound_ranges.emplace(
-                    lp_.row_constraint[i], SensitivityRange{row_bound_dn[i], row_bound_up[i]});
+            if (ranging_status == kHighsStatusOk) {
+                for (std::size_t i = 0; i < lp_.col_variable.size(); ++i) {
+                    result.objective_coefficient_ranges.emplace(
+                        lp_.col_variable[i], SensitivityRange{col_cost_dn[i], col_cost_up[i]});
+                    result.variable_bound_ranges.emplace(
+                        lp_.col_variable[i], SensitivityRange{col_bound_dn[i], col_bound_up[i]});
+                }
+                for (std::size_t i = 0; i < lp_.row_constraint.size(); ++i) {
+                    result.constraint_bound_ranges.emplace(
+                        lp_.row_constraint[i], SensitivityRange{row_bound_dn[i], row_bound_up[i]});
+                }
             }
         }
     }
@@ -440,6 +465,7 @@ VarKind HighsSolver::variable_kind(Variable var) const {
 
 void HighsSolver::set_variable_kind(Variable var, VarKind kind) {
     std::int64_t col = column_of(var);
+    if (lp_.has_quadratic_objective() && kind != VarKind::Continuous) throw_unsupported_miqp();
     Highs_changeColIntegrality(highs_, static_cast<HighsInt>(col), to_highs_integrality(kind));
     lp_.col_kind[static_cast<std::size_t>(col)] = kind;
 }

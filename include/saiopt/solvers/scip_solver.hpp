@@ -70,6 +70,10 @@ public:
 
     void set_progress_callback(ProgressCallback callback) override;
 
+    // No-op: ScipSolver doesn't compute sensitivity ranging (or duals) at
+    // all yet, so SolveResult's *_ranges stay empty either way.
+    void set_sensitivity_ranging(bool) override {}
+
     // SCIP picks the format from `path`'s extension, so on top of ".lp"
     // and ".mps" any format one of its default reader plugins can write
     // works too (e.g. ".cip", SCIP's own). An unrecognized extension

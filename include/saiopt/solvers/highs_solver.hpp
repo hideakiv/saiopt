@@ -80,6 +80,8 @@ public:
     // create_solver for a clean re-attempt.
     void set_progress_callback(ProgressCallback callback) override;
 
+    void set_sensitivity_ranging(bool enabled) override;
+
     // HiGHS picks the format from `path`'s extension: ".lp" or ".mps".
     // An unrecognized extension throws.
     void write_model(const std::string& path) const override;
@@ -121,6 +123,12 @@ private:
     std::map<std::pair<std::int64_t, std::int64_t>, double> coefficient_overrides_;
 
     ProgressCallback progress_callback_;
+
+    bool sensitivity_ranging_ = false;
+
+    // Whether lp_'s names have been handed to HiGHS yet -- write_model
+    // does that lazily, the first time it's called (see there for why).
+    mutable bool names_passed_ = false;
 };
 
 }  // namespace saiopt

@@ -122,7 +122,15 @@ def test_lp_duals_and_ranging():
     total = model.add_constraint("total", x + y >= 10)
     model.set_objective(so.ObjectiveSense.Minimize, 2 * x + 3 * y)
 
-    result = so.create_solver(model, "highs").solve()
+    solver = so.create_solver(model, "highs")
+    plain = solver.solve()
+    assert plain.dual(total) == pytest.approx(2.0)
+    assert plain.objective_coefficient_ranges == {}
+    with pytest.raises(KeyError):
+        plain.objective_coefficient_range(x)
+
+    solver.set_sensitivity_ranging(True)
+    result = solver.solve()
     assert result.dual(total) == pytest.approx(2.0)
     assert result.reduced_cost(y) == pytest.approx(1.0)
     rng = result.objective_coefficient_range(x)

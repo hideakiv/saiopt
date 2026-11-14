@@ -87,6 +87,7 @@ TEST_CASE("duals, reduced costs, and sensitivity ranging on a simple LP", "[lp]"
     ConstraintRef total = model.add_constraint("total", x + y >= 10.0);
 
     auto solver = create_solver(model, "highs");
+    solver->set_sensitivity_ranging(true);
     SolveResult result = solver->solve();
     REQUIRE(result.optimal());
     REQUIRE(result.value(x) == Approx(10.0));
@@ -113,6 +114,16 @@ TEST_CASE("duals, reduced costs, and sensitivity ranging on a simple LP", "[lp]"
     SensitivityRange y_cost = result.objective_coefficient_range(y);
     REQUIRE(y_cost.lower == Approx(2.0));
     REQUIRE(std::isinf(y_cost.upper));
+
+    // Ranging is opt-in: switched back off, the next solve still has
+    // duals and reduced costs but no ranges.
+    solver->set_sensitivity_ranging(false);
+    SolveResult without = solver->solve();
+    REQUIRE(without.dual(total) == Approx(2.0));
+    REQUIRE(without.reduced_costs.size() == 2);
+    REQUIRE(without.objective_coefficient_ranges.empty());
+    REQUIRE(without.variable_bound_ranges.empty());
+    REQUIRE(without.constraint_bound_ranges.empty());
 }
 
 TEST_CASE("respects integrality on integer variables", "[milp]") {
@@ -123,6 +134,7 @@ TEST_CASE("respects integrality on integer variables", "[milp]") {
     model.add_constraint("cap", x <= 3.7);
 
     auto solver = create_solver(model, "highs");
+    solver->set_sensitivity_ranging(true);
     SolveResult result = solver->solve();
 
     REQUIRE(result.optimal());
@@ -219,6 +231,19 @@ TEST_CASE("progress callback fires during solve and can interrupt it", "[lp]") {
         REQUIRE_FALSE(result.optimal());
         REQUIRE(result.status == SolveStatus::Interrupted);
         REQUIRE(calls > 0);
+    }
+
+    SECTION("a cleared callback stops firing") {
+        int calls = 0;
+        auto solver = create_solver(model, "highs");
+        solver->set_progress_callback([&](const SolverProgress&) {
+            ++calls;
+            return false;
+        });
+        solver->set_progress_callback({});
+        SolveResult result = solver->solve();
+        REQUIRE(result.optimal());
+        REQUIRE(calls == 0);
     }
 
     SECTION("a fresh Solver still solves cleanly after a different one was interrupted") {

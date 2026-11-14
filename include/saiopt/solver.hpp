@@ -141,6 +141,14 @@ public:
     // the concrete backend.
     virtual void set_progress_callback(ProgressCallback callback) = 0;
 
+    // Whether solve() also computes sensitivity ranging -- SolveResult's
+    // objective_coefficient_ranges, variable_bound_ranges, and
+    // constraint_bound_ranges -- for an LP. Off by default: on a large LP
+    // it's a noticeable share of each solve, and most callers never read
+    // it. Duals and reduced costs come back either way. A backend that
+    // can't compute ranging leaves those maps empty regardless.
+    virtual void set_sensitivity_ranging(bool enabled) = 0;
+
     // Writes this Solver's current model -- including any coefficient/
     // bound/kind changes made through the setters above -- to `path`,
     // in the file format its extension names. Every backend supports

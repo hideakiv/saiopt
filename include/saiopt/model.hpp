@@ -62,7 +62,8 @@ std::ostream& operator<<(std::ostream& os, SolveStatus status);
 // maps are left empty rather than published with the zeroed-out values
 // HiGHS returns for one. A continuous QP gets duals and reduced costs
 // (its KKT multipliers) but no ranging, which is a property of an LP
-// basis.
+// basis. Ranging is also only computed on request -- see
+// Solver::set_sensitivity_ranging.
 struct SolveResult {
     SolveStatus status = SolveStatus::Unknown;
 

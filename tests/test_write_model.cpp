@@ -118,6 +118,21 @@ TEST_CASE("write_model reflects changes made through the Solver", "[write]") {
     REQUIRE(solve_file_with_highs(path) == Approx(result.objective_value));
 }
 
+TEST_CASE("write_model works before any solve, and solving still works after it", "[write]") {
+    std::string backend = GENERATE("highs", "scip");
+    CAPTURE(backend);
+
+    Model model = build_shipping();
+    auto solver = create_solver(model, backend);
+    auto path = scratch_dir() / (backend + "_before_solve.lp");
+    solver->write_model(path.string());
+    REQUIRE(read_file(path).find("ship((W1,1))") != std::string::npos);
+
+    SolveResult result = solver->solve();
+    REQUIRE(result.optimal());
+    REQUIRE(solve_file_with_highs(path) == Approx(result.objective_value));
+}
+
 TEST_CASE("write_model rejects an unknown extension without touching the file", "[write]") {
     std::string backend = GENERATE("highs", "scip");
     CAPTURE(backend);

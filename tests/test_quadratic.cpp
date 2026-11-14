@@ -124,7 +124,9 @@ TEST_CASE("HiGHS publishes duals for a continuous QP but no ranging", "[quadrati
     SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, x * x + y * y);
     SAIOPT_CONSTRAINT(model, total, x + y >= 2.0);
 
-    SolveResult result = create_solver(model, "highs")->solve();
+    auto solver = create_solver(model, "highs");
+    solver->set_sensitivity_ranging(true);
+    SolveResult result = solver->solve();
     REQUIRE(result.optimal());
     // d(objective)/d(rhs) at x = y = rhs / 2: d(rhs^2 / 2)/d(rhs) = rhs.
     REQUIRE(result.dual(total) == Approx(2.0));

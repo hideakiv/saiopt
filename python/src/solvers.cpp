@@ -216,6 +216,10 @@ void bind_solvers(nb::module_& m) {
             "Call `callback(progress)` periodically during solve(); returning False stops the solve early (None "
             "or True continues). An exception it raises also stops the solve, and is re-raised from solve(). "
             "Pass None to clear it.")
+        .def("set_sensitivity_ranging",
+             [](PySolver& self, bool enabled) { self.solver->set_sensitivity_ranging(enabled); }, "enabled"_a,
+             "Whether solve() also computes sensitivity ranging (the *_ranges results) for an LP. Off by default; "
+             "duals and reduced costs come back either way.")
         .def("objective_coefficient",
              [](const PySolver& self, Variable var) { return self.solver->objective_coefficient(var); }, "var"_a)
         .def("set_objective_coefficient",

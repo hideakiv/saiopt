@@ -303,6 +303,12 @@ SolveResult r2 = solver->solve();
 
 See `examples/solver_mutation.cpp` for all of these in one walkthrough.
 
+For an LP, `SolveResult` carries duals and reduced costs. Sensitivity
+ranging (`objective_coefficient_ranges`, `variable_bound_ranges`,
+`constraint_bound_ranges`) is opt-in, since it's a noticeable share of
+each solve on a large model: call `solver->set_sensitivity_ranging(true)`
+first.
+
 `solver->write_model(path)` writes the `Solver`'s current model --
 including any changes made through those setters -- to a file, in the
 format `path`'s extension names. Both backends write `.lp` (CPLEX LP)

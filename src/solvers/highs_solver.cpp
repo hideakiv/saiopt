@@ -115,15 +115,19 @@ void highs_progress_trampoline(int callback_type, const char* /*message*/,
 // types that can actually honor an interrupt request (unlike, say, the
 // logging-flavored events) -- covers LP simplex, LP IPM, and MIP
 // branch-and-bound progress in one shot.
-void start_progress_callback(void* highs, HighsSolver* self) {
+void register_progress_callback(void* highs, HighsSolver* self) {
     HighsInt status = Highs_setCallback(highs, &highs_progress_trampoline, self);
     if (status != kHighsStatusOk) {
         throw std::runtime_error("HiGHS rejected the progress callback registration");
     }
-    Highs_startCallback(highs, kHighsCallbackSimplexInterrupt);
-    Highs_startCallback(highs, kHighsCallbackIpmInterrupt);
-    Highs_startCallback(highs, kHighsCallbackMipInterrupt);
 }
+
+// The event types the trampoline handles are only started while a
+// progress callback is actually set: HiGHS does measurable work for every
+// started callback event even when the trampoline then does nothing (on a
+// 1M-column LP, about a third of a second per solve).
+const HighsInt kProgressCallbackTypes[] = {kHighsCallbackSimplexInterrupt, kHighsCallbackIpmInterrupt,
+                                           kHighsCallbackMipInterrupt};
 
 void check_option_status(HighsInt status, const std::string& key) {
     if (status != kHighsStatusOk) {
@@ -197,16 +201,7 @@ HighsSolver::HighsSolver(const Model& model, const SolverOptions& options) : lp_
             }
         }
 
-        std::vector<std::string> col_names = file_safe_names(lp_.col_name);
-        for (std::size_t i = 0; i < col_names.size(); ++i) {
-            Highs_passColName(highs_, static_cast<HighsInt>(i), col_names[i].c_str());
-        }
-        std::vector<std::string> row_names = file_safe_names(lp_.row_name);
-        for (std::size_t i = 0; i < row_names.size(); ++i) {
-            Highs_passRowName(highs_, static_cast<HighsInt>(i), row_names[i].c_str());
-        }
-
-        start_progress_callback(highs_, this);
+        register_progress_callback(highs_, this);
     } catch (...) {
         // A throwing constructor's destructor never runs, so highs_ would
         // otherwise leak here -- clean it up ourselves before propagating.
@@ -228,7 +223,9 @@ HighsSolver::HighsSolver(HighsSolver&& other) noexcept
       var_column_(std::move(other.var_column_)),
       constraint_row_(std::move(other.constraint_row_)),
       coefficient_overrides_(std::move(other.coefficient_overrides_)),
-      progress_callback_(std::move(other.progress_callback_)) {
+      progress_callback_(std::move(other.progress_callback_)),
+      sensitivity_ranging_(other.sensitivity_ranging_),
+      names_passed_(other.names_passed_) {
     other.highs_ = nullptr;
     // Highs_setCallback's user_data is a raw `this` pointer, captured at
     // registration time -- refresh it to this (new) object's address, or
@@ -245,6 +242,8 @@ HighsSolver& HighsSolver::operator=(HighsSolver&& other) noexcept {
         constraint_row_ = std::move(other.constraint_row_);
         coefficient_overrides_ = std::move(other.coefficient_overrides_);
         progress_callback_ = std::move(other.progress_callback_);
+        sensitivity_ranging_ = other.sensitivity_ranging_;
+        names_passed_ = other.names_passed_;
         other.highs_ = nullptr;
         if (highs_) Highs_setCallback(highs_, &highs_progress_trampoline, this);
     }
@@ -291,7 +290,8 @@ SolveResult HighsSolver::solve() {
     // are its KKT multipliers): for a MILP the dual arrays from
     // Highs_getSolution come back all zero (not the final LP relaxation's
     // values), so leave these unset rather than publish misleading zeros.
-    // Ranging is a property of an LP basis, so a QP doesn't get it either.
+    // Ranging is a property of an LP basis, so a QP doesn't get it either,
+    // and it's only computed when asked for (see set_sensitivity_ranging).
     if (result.optimal() && is_pure_lp(lp_)) {
         for (std::size_t i = 0; i < lp_.col_variable.size(); ++i) {
             result.reduced_costs.emplace(lp_.col_variable[i], col_dual[i]);
@@ -299,7 +299,7 @@ SolveResult HighsSolver::solve() {
         for (std::size_t i = 0; i < lp_.row_constraint.size(); ++i) {
             result.duals.emplace(lp_.row_constraint[i], row_dual[i]);
         }
-        if (!lp_.has_quadratic_objective()) {
+        if (sensitivity_ranging_ && !lp_.has_quadratic_objective()) {
             std::vector<double> col_cost_up(lp_.num_col);
             std::vector<double> col_cost_dn(lp_.num_col);
             std::vector<double> col_bound_up(lp_.num_col);
@@ -332,6 +332,21 @@ SolveResult HighsSolver::solve() {
 }
 
 void HighsSolver::write_model(const std::string& path) const {
+    // Names are only handed to HiGHS here, the first time they're needed:
+    // HiGHS spends time on them at the start of every run otherwise (on a
+    // 1M-column LP, about a fifth of a second per solve, on top of passing
+    // them in), and nothing but a written file uses them.
+    if (!names_passed_) {
+        std::vector<std::string> col_names = file_safe_names(lp_.col_name);
+        for (std::size_t i = 0; i < col_names.size(); ++i) {
+            Highs_passColName(highs_, static_cast<HighsInt>(i), col_names[i].c_str());
+        }
+        std::vector<std::string> row_names = file_safe_names(lp_.row_name);
+        for (std::size_t i = 0; i < row_names.size(); ++i) {
+            Highs_passRowName(highs_, static_cast<HighsInt>(i), row_names[i].c_str());
+        }
+        names_passed_ = true;
+    }
     if (Highs_writeModel(highs_, path.c_str()) == kHighsStatusError) {
         throw std::runtime_error("HiGHS could not write the model to \"" + path + "\"");
     }
@@ -471,8 +486,21 @@ void HighsSolver::set_variable_kind(Variable var, VarKind kind) {
 }
 
 void HighsSolver::set_progress_callback(ProgressCallback callback) {
+    bool was_set = static_cast<bool>(progress_callback_);
+    bool now_set = static_cast<bool>(callback);
+    if (now_set != was_set) {
+        for (HighsInt type : kProgressCallbackTypes) {
+            if (now_set) {
+                Highs_startCallback(highs_, type);
+            } else {
+                Highs_stopCallback(highs_, type);
+            }
+        }
+    }
     progress_callback_ = std::move(callback);
 }
+
+void HighsSolver::set_sensitivity_ranging(bool enabled) { sensitivity_ranging_ = enabled; }
 
 bool HighsSolver::invoke_progress_callback(const SolverProgress& progress) const {
     if (!progress_callback_) return true;

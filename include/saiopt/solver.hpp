@@ -137,6 +137,17 @@ public:
     // clear it. Backends differ in exactly how often this fires -- see
     // the concrete backend.
     virtual void set_progress_callback(ProgressCallback callback) = 0;
+
+    // Writes this Solver's current model -- including any coefficient/
+    // bound/kind changes made through the setters above -- to `path`,
+    // in the file format its extension names. Every backend supports
+    // ".lp" (CPLEX LP) and ".mps" (free MPS); see the concrete backend
+    // for any others. Variables and constraints are written under their
+    // qualified names (see SparseLp::col_name), rewritten by
+    // file_safe_names into identifiers the format accepts. Throws
+    // std::runtime_error if the backend can't write `path` or doesn't
+    // recognize its extension.
+    virtual void write_model(const std::string& path) const = 0;
 };
 
 // A backend's constructor, wrapped so it can be looked up by name. See

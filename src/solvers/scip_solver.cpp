@@ -7,6 +7,7 @@
 #include <iterator>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -187,11 +188,14 @@ ScipSolver::ScipSolver(const Model& model, const SolverOptions& options) : lp_(f
         check(SCIPsetEventhdlrExitsol(scip, event_hdlr, scip_progress_event_exitsol),
               "SCIPsetEventhdlrExitsol");
 
+        std::vector<std::string> col_names = file_safe_names(lp_.col_name);
+        std::vector<std::string> row_names = file_safe_names(lp_.row_name);
+
         std::size_t num_col = static_cast<std::size_t>(lp_.num_col);
         scip_vars_.reserve(num_col);
         for (std::size_t i = 0; i < num_col; ++i) {
             SCIP_VAR* var = nullptr;
-            check(SCIPcreateVarBasic(scip, &var, ("x" + std::to_string(i)).c_str(),
+            check(SCIPcreateVarBasic(scip, &var, col_names[i].c_str(),
                                       to_scip_bound(scip, lp_.col_lower[i]), to_scip_bound(scip, lp_.col_upper[i]),
                                       lp_.col_cost[i], to_scip_vartype(lp_.col_kind[i])),
                   "SCIPcreateVarBasic");
@@ -223,7 +227,7 @@ ScipSolver::ScipSolver(const Model& model, const SolverOptions& options) : lp_(f
                 row_vals.push_back(coeff);
             }
             SCIP_CONS* cons = nullptr;
-            check(SCIPcreateConsBasicLinear(scip, &cons, ("c" + std::to_string(row)).c_str(),
+            check(SCIPcreateConsBasicLinear(scip, &cons, row_names[row].c_str(),
                                              static_cast<int>(row_vars.size()), row_vars.data(), row_vals.data(),
                                              to_scip_bound(scip, lp_.row_lower[row]),
                                              to_scip_bound(scip, lp_.row_upper[row])),
@@ -327,6 +331,33 @@ SolveResult ScipSolver::solve() {
     // publishing an unverified value is worse than publishing none.
 
     return result;
+}
+
+void ScipSolver::write_model(const std::string& path) const {
+    SCIP* scip = as_scip(scip_);
+    // SCIPwriteOrigProblem opens (truncating) `path` before it looks for
+    // a writer matching the extension, so check for one up front rather
+    // than clobber an existing file and then fail. A trailing ".gz" is
+    // SCIP's own compression suffix, not the format, so look past it.
+    std::string stem = path;
+    if (stem.size() > 3 && stem.compare(stem.size() - 3, 3, ".gz") == 0) stem.resize(stem.size() - 3);
+    std::size_t dot = stem.find_last_of('.');
+    std::size_t slash = stem.find_last_of('/');
+    std::string extension =
+        (dot == std::string::npos || (slash != std::string::npos && dot < slash)) ? "" : stem.substr(dot + 1);
+    SCIP_READER** readers = SCIPgetReaders(scip);
+    bool writable = std::any_of(readers, readers + SCIPgetNReaders(scip), [&](SCIP_READER* reader) {
+        return SCIPreaderCanWrite(reader) && extension == SCIPreaderGetExtension(reader);
+    });
+    if (!writable) {
+        throw std::runtime_error("SCIP has no writer for the file format of \"" + path + "\"");
+    }
+
+    SCIP_RETCODE rc = SCIPwriteOrigProblem(scip, path.c_str(), nullptr, FALSE);
+    if (rc != SCIP_OKAY) {
+        throw std::runtime_error("SCIP could not write the model to \"" + path + "\" (retcode " +
+                                 std::to_string(static_cast<int>(rc)) + ")");
+    }
 }
 
 std::int64_t ScipSolver::column_of(Variable var) const {

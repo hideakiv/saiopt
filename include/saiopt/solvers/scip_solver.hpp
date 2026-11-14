@@ -65,6 +65,12 @@ public:
 
     void set_progress_callback(ProgressCallback callback) override;
 
+    // SCIP picks the format from `path`'s extension, so on top of ".lp"
+    // and ".mps" any format one of its default reader plugins can write
+    // works too (e.g. ".cip", SCIP's own). An unrecognized extension
+    // throws.
+    void write_model(const std::string& path) const override;
+
     // Called by the SCIP event handler (src/solvers/scip_solver.cpp) -- not part
     // of the Solver interface, and not meant to be called directly, but
     // public for the same reason HighsSolver::invoke_progress_callback

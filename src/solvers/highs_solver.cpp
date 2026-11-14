@@ -6,6 +6,7 @@
 #include <iterator>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -167,6 +168,15 @@ HighsSolver::HighsSolver(const Model& model, const SolverOptions& options) : lp_
             }
         }
 
+        std::vector<std::string> col_names = file_safe_names(lp_.col_name);
+        for (std::size_t i = 0; i < col_names.size(); ++i) {
+            Highs_passColName(highs_, static_cast<HighsInt>(i), col_names[i].c_str());
+        }
+        std::vector<std::string> row_names = file_safe_names(lp_.row_name);
+        for (std::size_t i = 0; i < row_names.size(); ++i) {
+            Highs_passRowName(highs_, static_cast<HighsInt>(i), row_names[i].c_str());
+        }
+
         start_progress_callback(highs_, this);
     } catch (...) {
         // A throwing constructor's destructor never runs, so highs_ would
@@ -287,6 +297,12 @@ SolveResult HighsSolver::solve() {
     }
 
     return result;
+}
+
+void HighsSolver::write_model(const std::string& path) const {
+    if (Highs_writeModel(highs_, path.c_str()) == kHighsStatusError) {
+        throw std::runtime_error("HiGHS could not write the model to \"" + path + "\"");
+    }
 }
 
 std::int64_t HighsSolver::column_of(Variable var) const {

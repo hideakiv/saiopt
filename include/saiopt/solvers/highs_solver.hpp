@@ -71,6 +71,10 @@ public:
     // create_solver for a clean re-attempt.
     void set_progress_callback(ProgressCallback callback) override;
 
+    // HiGHS picks the format from `path`'s extension: ".lp" or ".mps".
+    // An unrecognized extension throws.
+    void write_model(const std::string& path) const override;
+
     // Called by the HiGHS callback trampoline (src/solvers/highs_solver.cpp) --
     // not part of the Solver interface, and not meant to be called
     // directly, but the trampoline is a free function (its signature is

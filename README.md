@@ -218,3 +218,17 @@ SolveResult r2 = solver->solve();
 ```
 
 See `examples/solver_mutation.cpp` for all of these in one walkthrough.
+
+`solver->write_model(path)` writes the `Solver`'s current model --
+including any changes made through those setters -- to a file, in the
+format `path`'s extension names. Both backends write `.lp` (CPLEX LP)
+and `.mps` (free MPS); `ScipSolver` also writes any other format SCIP's
+own plugins can (e.g. `.cip`). Variables and constraints keep their
+qualified names, rewritten into identifiers the formats accept (see
+`file_safe_names` in `saiopt/sparse_lp.hpp`) -- `sub.x[(a, 1)]` is
+written as `sub.x((a,1))`:
+
+```cpp
+auto solver = create_solver(model, "highs");
+solver->write_model("model.lp");  // throws if the extension isn't supported
+```

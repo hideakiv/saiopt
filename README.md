@@ -232,3 +232,20 @@ written as `sub.x((a,1))`:
 auto solver = create_solver(model, "highs");
 solver->write_model("model.lp");  // throws if the extension isn't supported
 ```
+
+`solver->set_initial_solution(values)` gives the next `solve()` a
+starting point (a MIP start) -- values for some or all variables, which
+the backend completes into a feasible solution if it can and starts its
+search from. It's only a hint, so a start that can't be completed is
+dropped rather than reported as an error; a value outside its
+variable's bounds (beyond a small tolerance) or one for a variable from
+another model throws. Passing a previous result's values back in is the
+common case -- e.g. re-solving after repricing, which leaves the old
+solution feasible:
+
+```cpp
+SolveResult r1 = solver->solve();
+solver->set_objective_coefficient(open_site, 120.0);
+solver->set_initial_solution(r1.variable_values);  // start from the old plan
+SolveResult r2 = solver->solve();
+```

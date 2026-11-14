@@ -4,6 +4,7 @@
 #include <scip/scipdefplugins.h>
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <memory>
 #include <stdexcept>
@@ -158,6 +159,12 @@ SCIP_DECL_EVENTINITSOL(scip_progress_event_initsol) {
 SCIP_DECL_EVENTEXITSOL(scip_progress_event_exitsol) {
     return SCIPdropEvent(scip, SCIP_EVENTTYPE_NODESOLVED | SCIP_EVENTTYPE_LPEVENT, eventhdlr, nullptr, -1);
 }
+
+// How far outside a variable's bound an initial solution value may sit
+// and still be accepted (and clamped back onto the bound) -- a solve's
+// own values routinely land a hair past one, e.g. 1.0000000001 for a
+// binary, so a previous SolveResult's values can be passed back in.
+double bound_tolerance(double bound) { return 1e-6 * std::max(1.0, std::abs(bound)); }
 
 }  // namespace
 
@@ -358,6 +365,51 @@ void ScipSolver::write_model(const std::string& path) const {
         throw std::runtime_error("SCIP could not write the model to \"" + path + "\" (retcode " +
                                  std::to_string(static_cast<int>(rc)) + ")");
     }
+}
+
+void ScipSolver::set_initial_solution(const std::unordered_map<Variable, double>& values) {
+    if (values.empty()) return;
+    std::vector<std::int64_t> columns;
+    std::vector<double> col_values;
+    columns.reserve(values.size());
+    col_values.reserve(values.size());
+    for (const auto& [var, value] : values) {
+        std::int64_t col = column_of(var);
+        std::size_t c = static_cast<std::size_t>(col);
+        double lower = lp_.col_lower[c];
+        double upper = lp_.col_upper[c];
+        if (!std::isfinite(value) || value < lower - bound_tolerance(lower) ||
+            value > upper + bound_tolerance(upper)) {
+            throw std::runtime_error("initial solution value " + std::to_string(value) + " for variable \"" +
+                                     lp_.col_name[c] + "\" is not finite or lies outside its bounds");
+        }
+        columns.push_back(static_cast<std::int64_t>(col));
+        col_values.push_back(std::clamp(value, lower, upper));
+    }
+
+    // A solution added before solving is only checked (and, if
+    // feasible, kept as an incumbent) once the solve starts. A partial
+    // one -- not every variable given -- is instead handed to SCIP's
+    // completesol heuristic, which tries to fill in the rest.
+    ensure_mutable();
+    SCIP* scip = as_scip(scip_);
+    SCIP_SOL* sol = nullptr;
+    bool partial = columns.size() < scip_vars_.size();
+    if (partial) {
+        check(SCIPcreatePartialSol(scip, &sol, nullptr), "SCIPcreatePartialSol");
+    } else {
+        check(SCIPcreateSol(scip, &sol, nullptr), "SCIPcreateSol");
+    }
+    for (std::size_t i = 0; i < columns.size(); ++i) {
+        SCIP_RETCODE rc = SCIPsetSolVal(scip, sol, as_var(scip_vars_[static_cast<std::size_t>(columns[i])]),
+                                        col_values[i]);
+        if (rc != SCIP_OKAY) {
+            SCIPfreeSol(scip, &sol);
+            check(rc, "SCIPsetSolVal");
+        }
+    }
+    SCIP_Bool stored = FALSE;
+    check(SCIPaddSolFree(scip, &sol, &stored), "SCIPaddSolFree");
 }
 
 std::int64_t ScipSolver::column_of(Variable var) const {

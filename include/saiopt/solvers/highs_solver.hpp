@@ -75,6 +75,8 @@ public:
     // An unrecognized extension throws.
     void write_model(const std::string& path) const override;
 
+    void set_initial_solution(const std::unordered_map<Variable, double>& values) override;
+
     // Called by the HiGHS callback trampoline (src/solvers/highs_solver.cpp) --
     // not part of the Solver interface, and not meant to be called
     // directly, but the trampoline is a free function (its signature is

@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 
 #include "saiopt/constraint_ref.hpp"
 #include "saiopt/variable.hpp"
@@ -148,6 +149,22 @@ public:
     // std::runtime_error if the backend can't write `path` or doesn't
     // recognize its extension.
     virtual void write_model(const std::string& path) const = 0;
+
+    // Gives the next solve() a starting point -- a MIP start: a value for
+    // some or all variables (e.g. a previous SolveResult's
+    // variable_values), which the backend tries to complete into a
+    // feasible solution and, if it succeeds, starts its search from as
+    // an incumbent. It's only a hint: a start that can't be completed
+    // into a feasible solution is dropped, and the solve proceeds as if
+    // none had been given. Neither backend can withdraw a start once
+    // given, so calling this again adds a new one rather than replacing
+    // the old -- whether an earlier start (or a solution an earlier
+    // solve() found) also still seeds a later solve() is up to the
+    // backend. An empty `values` does nothing. Throws std::runtime_error
+    // -- before handing anything to the backend -- if a variable doesn't
+    // belong to this Solver's model, or a value isn't finite or lies
+    // outside that variable's current bounds.
+    virtual void set_initial_solution(const std::unordered_map<Variable, double>& values) = 0;
 };
 
 // A backend's constructor, wrapped so it can be looked up by name. See

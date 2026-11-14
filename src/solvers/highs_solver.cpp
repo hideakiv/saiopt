@@ -3,6 +3,7 @@
 #include <interfaces/highs_c_api.h>
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <memory>
 #include <stdexcept>
@@ -139,6 +140,12 @@ void apply_options(void* highs, const SolverOptions& options) {
         check_option_status(Highs_setStringOptionValue(highs, key.c_str(), value.c_str()), key);
     }
 }
+
+// How far outside a variable's bound an initial solution value may sit
+// and still be accepted (and clamped back onto the bound) -- a solve's
+// own values routinely land a hair past one, e.g. 1.0000000001 for a
+// binary, so a previous SolveResult's values can be passed back in.
+double bound_tolerance(double bound) { return 1e-6 * std::max(1.0, std::abs(bound)); }
 
 }  // namespace
 
@@ -302,6 +309,35 @@ SolveResult HighsSolver::solve() {
 void HighsSolver::write_model(const std::string& path) const {
     if (Highs_writeModel(highs_, path.c_str()) == kHighsStatusError) {
         throw std::runtime_error("HiGHS could not write the model to \"" + path + "\"");
+    }
+}
+
+void HighsSolver::set_initial_solution(const std::unordered_map<Variable, double>& values) {
+    if (values.empty()) return;
+    std::vector<HighsInt> columns;
+    std::vector<double> col_values;
+    columns.reserve(values.size());
+    col_values.reserve(values.size());
+    for (const auto& [var, value] : values) {
+        std::int64_t col = column_of(var);
+        std::size_t c = static_cast<std::size_t>(col);
+        double lower = lp_.col_lower[c];
+        double upper = lp_.col_upper[c];
+        if (!std::isfinite(value) || value < lower - bound_tolerance(lower) ||
+            value > upper + bound_tolerance(upper)) {
+            throw std::runtime_error("initial solution value " + std::to_string(value) + " for variable \"" +
+                                     lp_.col_name[c] + "\" is not finite or lies outside its bounds");
+        }
+        columns.push_back(static_cast<HighsInt>(col));
+        col_values.push_back(std::clamp(value, lower, upper));
+    }
+
+    // HiGHS fills in the variables left out itself -- completing the
+    // discrete ones and then solving for the rest -- at the start of the
+    // next run.
+    if (Highs_setSparseSolution(highs_, static_cast<HighsInt>(columns.size()), columns.data(),
+                                col_values.data()) == kHighsStatusError) {
+        throw std::runtime_error("HiGHS rejected the initial solution");
     }
 }
 

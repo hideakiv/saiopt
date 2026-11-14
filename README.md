@@ -90,6 +90,24 @@ A few things differ from C++, because Python works differently:
   keep going, and an exception it raises stops the solve and is re-raised
   from `solve()`.
 
+`saiopt.mpi` (with `pip install .[mpi]`, which adds mpi4py) is the Python
+counterpart of `saiopt_mpi`: `send_block(block, dest, tag=0, comm=None)`,
+`recv_block(source=ANY_SOURCE, tag=ANY_TAG, comm=None)`, and
+`gather_blocks(block, root=0)`, which collects every rank's Block on
+`root` in rank order. A Block travels as the same raw `MPI_BYTE` message
+the C++ functions send, so Python and C++ ranks can exchange Blocks in one
+job. See `python/examples/mpi_parallel_build.py`, the port of the C++
+example:
+
+```sh
+mpiexec -n 4 python python/examples/mpi_parallel_build.py
+```
+
+Importing `saiopt.mpi` initializes MPI (through mpi4py), and some MPI
+builds -- MPICH over libfabric, for one -- then abort the process on any
+`fork()`, including the one `subprocess` uses. Start subprocesses before
+importing it.
+
 ## MPI
 
 `Block::serialize()`/`Block::deserialize()` turn a `Block` (with its whole

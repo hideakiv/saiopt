@@ -24,7 +24,14 @@ public:
     BlockId block() const noexcept { return block_; }
     std::size_t index() const noexcept { return index_; }
 
-    friend bool operator==(const Variable&, const Variable&) noexcept = default;
+    // Whether `other` is a handle to this same variable. There's
+    // deliberately no operator== for that: `x == y` builds the constraint
+    // x = y, the same way `x <= y` and `x >= y` build constraints (see
+    // saiopt/constraint.hpp). Hash containers keyed by Variable get their
+    // equality from the std::equal_to specialization below instead.
+    bool is_same(const Variable& other) const noexcept {
+        return block_ == other.block_ && index_ == other.index_;
+    }
 
 private:
     friend class Block;
@@ -80,4 +87,11 @@ struct std::hash<saiopt::Variable> {
     std::size_t operator()(const saiopt::Variable& v) const noexcept {
         return saiopt::detail::hash_in_block(v.block().raw(), v.index());
     }
+};
+
+// Identity equality, for std::unordered_map/std::unordered_set keyed by
+// Variable -- Variable has no operator== of its own (see is_same).
+template <>
+struct std::equal_to<saiopt::Variable> {
+    bool operator()(const saiopt::Variable& a, const saiopt::Variable& b) const noexcept { return a.is_same(b); }
 };

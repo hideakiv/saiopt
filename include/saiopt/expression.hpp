@@ -61,7 +61,9 @@ public:
     Variable first() const noexcept { return first_; }
     Variable second() const noexcept { return second_; }
 
-    friend bool operator==(const VariablePair&, const VariablePair&) noexcept = default;
+    friend bool operator==(const VariablePair& a, const VariablePair& b) noexcept {
+        return a.first_.is_same(b.first_) && a.second_.is_same(b.second_);
+    }
 
 private:
     Variable first_;

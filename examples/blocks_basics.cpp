@@ -44,8 +44,8 @@ int main() {
     // declared on, so the whole tree can be walked back by name alone.
     Variable looked_up_x = *model.var("x");
     Variable looked_up_y = *model.block("sub")->var("y");
-    assert(looked_up_x == x);
-    assert(looked_up_y == y);
+    assert(looked_up_x.is_same(x));
+    assert(looked_up_y.is_same(y));
     std::printf("(name-based lookup confirmed to match the original handles)\n");
     return 0;
 }

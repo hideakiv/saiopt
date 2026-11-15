@@ -1,5 +1,7 @@
 #include <cmath>
 #include <stdexcept>
+#include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -320,4 +322,42 @@ TEST_CASE("solve reports a structured status", "[lp]") {
         REQUIRE(to_string(SolveStatus::InfeasibleOrUnbounded) == "infeasible or unbounded");
         REQUIRE(to_string(SolveStatus::TimeLimit) == "time limit");
     }
+}
+
+TEST_CASE("x == y between two variables builds an equality constraint", "[lp]") {
+    Model model;
+    SAIOPT_VAR(model, x, .bounds = {0.0, 10.0});
+    SAIOPT_VAR(model, y, .bounds = {3.0, 4.0});
+
+    static_assert(std::is_same_v<decltype(x == y), Constraint>);
+    Constraint c = x == y;
+    REQUIRE(c.coefficient(x) == Approx(1.0));
+    REQUIRE(c.coefficient(y) == Approx(-1.0));
+    REQUIRE(c.lower() == Approx(0.0));
+    REQUIRE(c.upper() == Approx(0.0));
+
+    SAIOPT_CONSTRAINT(model, same, x == y);
+    SAIOPT_OBJECTIVE(model, ObjectiveSense::Maximize, x);
+
+    SolveResult result = create_solver(model, "highs")->solve();
+    REQUIRE(result.optimal());
+    REQUIRE(result.value(x) == Approx(4.0));
+    REQUIRE(result.value(y) == Approx(4.0));
+}
+
+TEST_CASE("Variable identity is is_same, and hash containers still key by it", "[lp]") {
+    Model model;
+    SAIOPT_VAR(model, x);
+    SAIOPT_VAR(model, y);
+
+    REQUIRE(x.is_same(x));
+    REQUIRE_FALSE(x.is_same(y));
+    REQUIRE(model.var("x").value().is_same(x));
+
+    std::unordered_map<Variable, int> counts;
+    counts[x] += 1;
+    counts[x] += 1;
+    counts[y] += 1;
+    REQUIRE(counts.size() == 2);
+    REQUIRE(counts.at(x) == 2);
 }

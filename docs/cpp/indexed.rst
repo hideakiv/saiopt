@@ -164,7 +164,7 @@ group by the name it was declared under:
    // A single item, by its full name. Returns std::optional<Variable>.
    std::optional<Variable> one = model.var("ship[(W2, C3)]");
 
-   std::printf("%d %zu\n", *one == ship[{"W2", "C3"}], ship_list.size());
+   std::printf("%d %zu\n", one->is_same(ship[{"W2", "C3"}]), ship_list.size());
 
 .. code-block:: text
 

@@ -184,14 +184,14 @@ void bind_expressions(nb::module_& m) {
                                   "A handle to a variable owned by a Block or Model. Created by add_var/add_vars "
                                   "only; compare two with `is_same`, since `==` builds a constraint.");
     variable
-        .def("is_same", [](const Variable& a, const Variable& b) { return a == b; }, "other"_a,
+        .def("is_same", [](const Variable& a, const Variable& b) { return a.is_same(b); }, "other"_a,
              "Whether `other` is the same variable.")
         .def("__hash__", [](const Variable& v) { return std::hash<Variable>{}(v); })
         .def(
             "__ne__",
             [](nb::handle self, nb::handle other) -> nb::object {
                 if (!nb::isinstance<Variable>(other)) return not_implemented();
-                return nb::bool_(!(nb::cast<Variable>(self) == nb::cast<Variable>(other)));
+                return nb::bool_(!nb::cast<Variable>(self).is_same(nb::cast<Variable>(other)));
             },
             nb::is_operator())
         .def("__repr__", [](const Variable& v) {
@@ -300,7 +300,7 @@ void bind_expressions(nb::module_& m) {
              "var"_a)
         .def("__bool__",
              [](const PyConstraint& c) {
-                 if (c.variable_equality) return c.variable_equality->first == c.variable_equality->second;
+                 if (c.variable_equality) return c.variable_equality->first.is_same(c.variable_equality->second);
                  throw nb::type_error(
                      "a Constraint has no truth value -- for a two-sided range, write "
                      "Constraint(expr, lower, upper) instead of chaining `lower <= expr <= upper`");

@@ -115,7 +115,7 @@ std::string format_expression(const QuadraticExpression& expr,
         if (coeff == 0.0) continue;
         std::string a = label_of(labels, pair.first());
         std::string b = label_of(labels, pair.second());
-        if (pair.first() == pair.second()) {
+        if (pair.first().is_same(pair.second())) {
             quadratic.emplace_back(a + "^2", coeff);
         } else {
             quadratic.emplace_back(a < b ? a + "*" + b : b + "*" + a, coeff);

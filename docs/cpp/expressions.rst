@@ -93,17 +93,27 @@ explicitly.
 Comparing two variables
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-``x == y`` with two plain ``Variable`` handles is a ``bool``: it checks
-whether they are the same variable, and doesn't build a constraint.
-``SAIOPT_CONSTRAINT(model, same, x == y)`` therefore doesn't compile. To
-require two variables to be equal, write it as an expression:
+``==`` always builds a constraint, including between two plain
+variables:
 
 .. code-block:: cpp
 
-   SAIOPT_CONSTRAINT(model, same, x - y == 0.0);
+   SAIOPT_CONSTRAINT(model, same, x == y);   // x = y
 
-As soon as either side is an expression (``x + y == z``, ``x == 3.0``,
-``x == 2.0 * y``), ``==`` builds a constraint as you would expect.
+To check whether two ``Variable`` handles refer to the same variable,
+use ``is_same``:
+
+.. code-block:: cpp
+
+   std::printf("%d %d\n", x.is_same(x), x.is_same(y));
+
+.. code-block:: text
+
+   1 0
+
+``Variable`` has no ``!=``. ``Variable`` still works as a key in
+``std::unordered_map`` and ``std::unordered_set``, which use
+``is_same`` through saiopt's ``std::equal_to<Variable>``.
 
 Quadratic objectives
 --------------------

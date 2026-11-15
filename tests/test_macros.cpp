@@ -19,7 +19,7 @@ TEST_CASE("SAIOPT_VAR declares a named local bound to the same lookup name", "[m
     Model model;
     SAIOPT_VAR(model, x, .bounds = {0.0, 4.0});
 
-    REQUIRE(model.var("x") == x);
+    REQUIRE(model.var("x").value().is_same(x));
 }
 
 TEST_CASE("SAIOPT_CONSTRAINT declares a named local bound to the same lookup name", "[macros]") {
@@ -44,8 +44,8 @@ TEST_CASE("SAIOPT_VARS declares one variable per index item, named by key", "[ma
     SAIOPT_VARS(model, open, items, .kind = VarKind::Binary);
 
     REQUIRE(open.size() == 2);
-    REQUIRE(model.var("open[a]") == open[std::string("a")]);
-    REQUIRE(model.var("open[b]") == open[std::string("b")]);
+    REQUIRE(model.var("open[a]").value().is_same(open[std::string("a")]));
+    REQUIRE(model.var("open[b]").value().is_same(open[std::string("b")]));
 }
 
 TEST_CASE("Model::vars/Block::vars look up a whole indexed group at once", "[macros]") {
@@ -57,7 +57,7 @@ TEST_CASE("Model::vars/Block::vars look up a whole indexed group at once", "[mac
         auto looked_up = model.vars("open", items);
 
         REQUIRE(looked_up.size() == open.size());
-        for (const auto& item : items) REQUIRE(looked_up[item] == open[item]);
+        for (const auto& item : items) REQUIRE(looked_up[item].is_same(open[item]));
     }
 
     SECTION("works the same way from inside a Block, not just Model's root") {
@@ -67,7 +67,7 @@ TEST_CASE("Model::vars/Block::vars look up a whole indexed group at once", "[mac
 
         auto looked_up = block.vars("output", lines);
         REQUIRE(looked_up.size() == output.size());
-        for (const auto& line : lines) REQUIRE(looked_up[line] == output[line]);
+        for (const auto& line : lines) REQUIRE(looked_up[line].is_same(output[line]));
     }
 
     SECTION("throws naming the first key that wasn't declared") {
@@ -203,7 +203,7 @@ TEST_CASE("index-free vars/constraints/blocks retrieval: untyped and typed", "[m
         REQUIRE(c.size() == 3);
         REQUIRE(b.size() == 3);
         for (std::size_t i = 0; i < items.size(); ++i) {
-            REQUIRE(v[i] == open[items[i]]);
+            REQUIRE(v[i].is_same(open[items[i]]));
             REQUIRE(c[i] == cap[items[i]]);
             REQUIRE(b[i] == &model.block(region[items[i]]));
         }
@@ -215,7 +215,7 @@ TEST_CASE("index-free vars/constraints/blocks retrieval: untyped and typed", "[m
         Indexed<std::string, Block*> b = model.blocks<std::string>("region");
 
         for (const auto& item : items) {
-            REQUIRE(v[item] == open[item]);
+            REQUIRE(v[item].is_same(open[item]));
             REQUIRE(c[item] == cap[item]);
             REQUIRE(b[item] == &model.block(region[item]));
         }
@@ -230,7 +230,7 @@ TEST_CASE("index-free vars/constraints/blocks retrieval: untyped and typed", "[m
         REQUIRE(untyped.size() == 2);
 
         Indexed<int, Variable> typed = block.vars<int>("y");
-        for (int line : lines) REQUIRE(typed[line] == y[line]);
+        for (int line : lines) REQUIRE(typed[line].is_same(y[line]));
     }
 
     SECTION("throws for a name nothing was ever declared under") {
@@ -282,7 +282,7 @@ TEST_CASE("cross() stays flat past two ranges", "[macros]") {
     // subscript and derived name are both flat, at any arity.
     REQUIRE(ship.size() == 4);
     Variable v = ship[{"p1", "m1", 2}];
-    REQUIRE(model.var("ship[(p1, m1, 2)]") == v);
+    REQUIRE(model.var("ship[(p1, m1, 2)]").value().is_same(v));
 }
 
 TEST_CASE("indexed vars solve and their values can be looked up in bulk", "[macros]") {

@@ -22,6 +22,9 @@ writing a backend. Each page builds on the previous ones. The complete
 programs in the repository's ``examples/`` directory are linked from the
 pages that use them.
 
+saiopt also has a Python package with the same API; see the
+`Python guide <../python/>`_.
+
 .. toctree::
    :maxdepth: 2
    :caption: Guide

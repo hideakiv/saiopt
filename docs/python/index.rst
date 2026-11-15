@@ -15,7 +15,7 @@ MPI process. You then attach them to one model and solve them together.
 This guide walks through saiopt step by step, from a first model to
 building one in parallel with MPI. Each page builds on the previous ones.
 saiopt is also a C++ library, and the Python API mirrors the C++ one
-closely; the C++ guide covers that side.
+closely; the `C++ guide <../cpp/>`_ covers that side.
 
 .. toctree::
    :maxdepth: 2

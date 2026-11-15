@@ -1,0 +1,54 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# What GitHub Pages deployment needs, and nothing more.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; the newer one wins.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+
+      # The guides don't import saiopt, so only Sphinx is needed here --
+      # not the C++ build with HiGHS and SCIP.
+      - run: pip install -r docs/requirements.txt
+
+      # One site: a landing page at the root, each guide under its own path.
+      # -W is safe because nothing is fetched over the network at build time.
+      - run: |
+          sphinx-build -W -b html docs/python _site/python
+          sphinx-build -W -b html docs/cpp _site/cpp
+          cp docs/index.html _site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

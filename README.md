@@ -13,9 +13,12 @@ with [SoPlex](https://soplex.zib.de/) as its LP solver.
 
 ## Documentation
 
-Step-by-step guides, with examples, for each language: `docs/python/`
-for the Python package and `docs/cpp/` for the C++ library. Build them
-with [Sphinx](https://www.sphinx-doc.org/):
+Documentation is available [here](https://hideakiv.github.io/saiopt/):
+step-by-step guides with examples for
+[Python](https://hideakiv.github.io/saiopt/python/) and
+[C++](https://hideakiv.github.io/saiopt/cpp/).
+
+To build them locally with [Sphinx](https://www.sphinx-doc.org/):
 
 ```sh
 pip install -r docs/requirements.txt

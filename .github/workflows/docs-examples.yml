@@ -21,6 +21,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
+      # One compiler family for everything. The runner's default cc is
+      # Clang but its c++ is GCC, and GCC's linker then can't read the
+      # objects Clang made for HiGHS's C files.
+      CC: gcc
+      CXX: g++
       # The MPI examples run 4 ranks, whatever the runner's core count.
       OMPI_MCA_rmaps_base_oversubscribe: "1"
       PRTE_MCA_rmaps_default_mapping_policy: ":oversubscribe"
@@ -35,10 +40,8 @@ jobs:
 
       # The C++ examples link against these shared libraries (the same
       # layout a default local build ends up with); mpi_parallel_build is
-      # run by the MPI page. One target per call: with the Makefile
-      # generator, several --target's become concurrent make runs that each
-      # build the dependencies they share (HiGHS, for one), racing to write
-      # the same object files.
+      # run by the MPI page. One target per call, so that make never builds
+      # the dependencies they share (HiGHS, for one) twice at once.
       - name: Build the C++ library
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSAIOPT_BUILD_TESTS=OFF -DBUILD_SHARED_LIBS=ON

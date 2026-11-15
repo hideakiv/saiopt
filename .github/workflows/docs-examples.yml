@@ -35,11 +35,16 @@ jobs:
 
       # The C++ examples link against these shared libraries (the same
       # layout a default local build ends up with); mpi_parallel_build is
-      # run by the MPI page.
+      # run by the MPI page. One target per call: with the Makefile
+      # generator, several --target's become concurrent make runs that each
+      # build the dependencies they share (HiGHS, for one), racing to write
+      # the same object files.
       - name: Build the C++ library
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSAIOPT_BUILD_TESTS=OFF -DBUILD_SHARED_LIBS=ON
-          cmake --build build -j "$(nproc)" --target saiopt saiopt_highs saiopt_scip mpi_parallel_build
+          for target in saiopt_highs saiopt_scip mpi_parallel_build; do
+            cmake --build build -j "$(nproc)" --target "$target"
+          done
 
       - name: Install the Python package
         run: pip install ".[mpi]"

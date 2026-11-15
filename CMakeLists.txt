@@ -87,15 +87,17 @@ if(SAIOPT_WITH_SCIP)
   # SCIP needs an LP solver; SoPlex is scipopt's own (Apache-2.0, like
   # SCIP itself). Both ship CMakeLists.txt files that predate CMake's
   # removal of <3.5 policy compatibility, and SCIP unconditionally
-  # requires GMP/PAPILO/ZIMPL/Readline unless told otherwise -- none of
-  # which affect saiopt's own build (Readline only serves SCIP's
-  # interactive shell), so these are forced only around fetching these
-  # two dependencies, not globally.
+  # requires GMP/PAPILO/ZIMPL/Readline/Ipopt unless told otherwise --
+  # none of which saiopt needs (Readline only serves SCIP's interactive
+  # shell, Ipopt only its nonlinear subproblems), so these are forced off
+  # only around fetching these two dependencies, not globally. That
+  # leaves zlib as SCIP's one system dependency.
   set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
   set(GMP off CACHE STRING "" FORCE)
   set(PAPILO off CACHE STRING "" FORCE)
   set(ZIMPL off CACHE STRING "" FORCE)
   set(READLINE off CACHE BOOL "" FORCE)
+  set(IPOPT off CACHE BOOL "" FORCE)
 
   FetchContent_Declare(
     soplex

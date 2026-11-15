@@ -167,7 +167,7 @@ HighsSolver::HighsSolver(const Model& model, const SolverOptions& options) : lp_
     if (lp_.has_sos2()) {
         throw std::runtime_error("HiGHS doesn't support SOS2 sets, and the model has one (\"" + lp_.sos2_name.front() +
                                  "\"); use the \"scip\" backend instead, or, for a piecewise linear "
-                                 "function, PiecewiseMethod::Incremental");
+                                 "function, the default PiecewiseMethod::Incremental");
     }
     highs_ = Highs_create();
     try {

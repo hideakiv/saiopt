@@ -8,9 +8,10 @@ such a function from its breakpoints and gives back f(x) as a linear
 expression, which you use anywhere an expression goes.
 
 When the function is nonconvex, such as a cost that gets cheaper per
-unit, an LP can't represent it. saiopt then adds auxiliary variables,
-together with either an SOS2 set or binary variables, so the solver picks
-the right segment.
+unit, an LP can't represent it. saiopt adds auxiliary variables so that
+the solver picks the right segment. By default these are binary
+variables, which every backend can solve. An SOS2 set is the
+alternative, for backends that support one.
 
 Step 1: the model
 -----------------
@@ -41,12 +42,12 @@ breakpoints the function is a straight line:
    model.set_objective(so.ObjectiveSense.Minimize, cost_a.value + 4 * from_b)
 
 ``cost_a.value`` is the cost of ``from_a`` units from supplier A.
-Solve with SCIP, because this model uses an SOS2 set (see
-`How it works`_ below):
+The model now has binary variables, so it's a MILP, which any backend
+solves:
 
 .. code-block:: python
 
-   result = so.create_solver(model, "scip").solve()
+   result = so.create_solver(model, "highs").solve()
    print(f"cost {result.objective_value:g}: {result[from_a]:g} from A")
 
 .. code-block:: text
@@ -65,30 +66,33 @@ per point:
 
    tiers = model.add_piecewise("tiers", from_b, [0, 100, 200], lambda q: 4 * q)
 
-Solving with HiGHS
-------------------
+Using an SOS2 set instead
+-------------------------
 
-HiGHS doesn't support SOS2 sets, so ``create_solver(model, "highs")``
-raises ``RuntimeError`` for the model above. Pass
-``method=so.PiecewiseMethod.Incremental`` to build the same function from
-binary variables instead. Every backend can solve that form:
+Pass ``method=so.PiecewiseMethod.Sos2`` to model the same function with
+an SOS2 set. This needs a backend that supports SOS2 sets, such as
+``"scip"``. HiGHS doesn't support them, so ``create_solver(model,
+"highs")`` raises ``RuntimeError`` for such a model.
 
 .. code-block:: python
 
-   model = so.Model()
-   from_a = model.add_var("from_a", bounds=(0, so.inf))
-   from_b = model.add_var("from_b", bounds=(0, so.inf))
-   model.add_constraint("demand", from_a + from_b == 180)
-   cost_a = model.add_piecewise("cost_a", from_a, [0, 100, 250], [0, 500, 800],
-                                method=so.PiecewiseMethod.Incremental)
-   model.set_objective(so.ObjectiveSense.Minimize, cost_a.value + 4 * from_b)
+   sos_model = so.Model()
+   a = sos_model.add_var("from_a", bounds=(0, so.inf))
+   b = sos_model.add_var("from_b", bounds=(0, so.inf))
+   sos_model.add_constraint("demand", a + b == 180)
+   sos_cost = sos_model.add_piecewise("cost_a", a, [0, 100, 250], [0, 500, 800],
+                                      method=so.PiecewiseMethod.Sos2)
+   sos_model.set_objective(so.ObjectiveSense.Minimize, sos_cost.value + 4 * b)
 
-   result = so.create_solver(model, "highs").solve()
-   print(f"cost {result.objective_value:g}: {result[from_a]:g} from A")
+   result = so.create_solver(sos_model, "scip").solve()
+   print(f"cost {result.objective_value:g}: {result[a]:g} from A")
 
 .. code-block:: text
 
    cost 660: 180 from A
+
+Both give the same answer. Which one solves faster depends on the
+model and the solver.
 
 How it works
 ------------
@@ -99,26 +103,29 @@ the block you called it on, tying those variables to ``x``.
 ``cost_a.block`` is that child block, and the auxiliary variables depend
 on the method:
 
-``PiecewiseMethod.Sos2`` (the default)
+``PiecewiseMethod.Incremental`` (the default)
+   A fraction ``delta[j]`` between 0 and 1 for how much of segment ``j``
+   is used, and a binary ``full[j]`` for each segment but the last.
+   Their constraints let a segment start only once the one before it is
+   full. Then ``x`` is the first point plus each segment's width times
+   its ``delta``, and f(x) is built the same way from ``values``.
+
+``PiecewiseMethod.Sos2``
    A weight ``lambda[i]`` between 0 and 1 for each breakpoint. The
    weights add up to 1 (constraint ``convexity``), and an SOS2 set
    ``sos2`` lets at most two neighbouring weights be nonzero. Then ``x``
    is ``sum(lambda[i] * points[i])``, and f(x) is the same combination of
    ``values``.
 
-``PiecewiseMethod.Incremental``
-   A fraction ``delta[j]`` between 0 and 1 for how much of segment ``j``
-   is used, and a binary ``full[j]`` for each segment but the last.
-   Their constraints let a segment start only once the one before it is
-   full.
-
 .. code-block:: python
 
    print(len(cost_a.block.vars("delta")), len(cost_a.block.vars("full")))
+   print(len(sos_cost.block.vars("lambda")))
 
 .. code-block:: text
 
    2 1
+   3
 
 Either way, ``x`` can't go outside the first and last breakpoint. Here,
 ``from_a`` can't exceed 250. To leave ``x`` unrestricted, add
@@ -147,7 +154,7 @@ is shipped looks like this:
    shipped = model.add_var("shipped", bounds=(10, so.inf))
    fee = model.add_piecewise("fee", shipped, [0, 0, 300], [0, 50, 350])
    model.set_objective(so.ObjectiveSense.Minimize, fee.value)
-   print(so.create_solver(model, "scip").solve().objective_value)
+   print(so.create_solver(model, "highs").solve().objective_value)
 
 .. code-block:: text
 
@@ -166,8 +173,8 @@ SOS2 sets directly
 
 ``add_sos2(name, vars)`` adds an SOS2 set over any variables of the
 block or its descendants: at most two of them may be nonzero, and those
-two must be neighbours in the order given. Like ``add_piecewise`` with
-the default method, it needs the ``"scip"`` backend.
+two must be neighbours in the order given. Like
+``PiecewiseMethod.Sos2``, it needs the ``"scip"`` backend.
 
 .. code-block:: python
 

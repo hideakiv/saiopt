@@ -27,6 +27,15 @@ def test_minimizes_a_nonconvex_function(method, backend):
     assert result[x] == pytest.approx(4.0)
 
 
+def test_the_default_method_works_with_highs():
+    model = so.Model()
+    x = model.add_var("x", bounds=(1, so.inf))
+    f = model.add_piecewise("f", x, POINTS, VALUES)
+    model.set_objective(so.ObjectiveSense.Minimize, f.value)
+    assert f.block.var("delta[0]") is not None
+    assert so.create_solver(model, "highs").solve().objective_value == pytest.approx(1.0)
+
+
 def test_values_may_be_a_callable_and_x_an_expression():
     model = so.Model()
     a = model.add_var("a", bounds=(1, 1))
@@ -47,8 +56,8 @@ def test_a_repeated_point_makes_a_jump():
 def test_auxiliary_variables_live_in_the_returned_child_block():
     model = so.Model()
     x = model.add_var("x", bounds=(0, 6))
-    f = model.add_piecewise("f", x, POINTS, VALUES)
-    g = model.add_piecewise("g", x, POINTS, VALUES, method=so.PiecewiseMethod.Incremental)
+    f = model.add_piecewise("f", x, POINTS, VALUES, method=so.PiecewiseMethod.Sos2)
+    g = model.add_piecewise("g", x, POINTS, VALUES)
 
     assert len(f.block.vars("lambda")) == 4
     assert len(model.block("f").vars("lambda")) == 4
@@ -60,7 +69,7 @@ def test_auxiliary_variables_live_in_the_returned_child_block():
 def test_highs_rejects_sos2():
     model = so.Model()
     x = model.add_var("x", bounds=(0, 6))
-    f = model.add_piecewise("f", x, POINTS, VALUES)
+    f = model.add_piecewise("f", x, POINTS, VALUES, method=so.PiecewiseMethod.Sos2)
     model.set_objective(so.ObjectiveSense.Minimize, f.value)
     with pytest.raises(RuntimeError, match="SOS2"):
         so.create_solver(model, "highs")
@@ -97,7 +106,7 @@ def test_add_sos2():
 def test_sos2_survives_serialization():
     region = so.Block()
     x = region.add_var("x", bounds=(1, so.inf))
-    f = region.add_piecewise("f", x, POINTS, VALUES)
+    f = region.add_piecewise("f", x, POINTS, VALUES, method=so.PiecewiseMethod.Sos2)
     region.set_objective(f.value)
 
     model = so.Model.from_block(so.Block.deserialize(region.serialize()), so.ObjectiveSense.Minimize)

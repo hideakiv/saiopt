@@ -84,10 +84,11 @@
 // named after `ident`; `ident` is the returned Piecewise, so `ident.value`
 // is f(x). `values` is a vector of f at each point or a callable `point ->
 // f(point)`; wrap a lambda in parentheses, as for SAIOPT_CONSTRAINTS. An
-// optional trailing PiecewiseMethod picks the formulation:
+// optional trailing PiecewiseMethod picks the formulation (Incremental by
+// default):
 //
 //   SAIOPT_PIECEWISE(model, cost, x, points, values);
-//   SAIOPT_PIECEWISE(model, cost, x, points, values, PiecewiseMethod::Incremental);
+//   SAIOPT_PIECEWISE(model, cost, x, points, values, PiecewiseMethod::Sos2);
 //   SAIOPT_PIECEWISE(model, cost, x, points, ([](double p) { return p * p; }));
 #define SAIOPT_PIECEWISE(block, ident, x, points, values, ...) \
     [[maybe_unused]] auto ident = (block).add_piecewise(#ident, (x), (points), (values) __VA_OPT__(, ) __VA_ARGS__)

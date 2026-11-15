@@ -40,16 +40,17 @@ struct ChildBlock;
 
 // How Block::add_piecewise models a piecewise linear function.
 enum class PiecewiseMethod {
+    // The default. A fill fraction delta[j] in [0, 1] per segment, and a
+    // binary full[j] per segment but the last, constrained so that a
+    // segment only starts once the one before it is full. Ordinary
+    // variables and constraints only, so any backend that solves MILPs
+    // can solve it.
+    Incremental,
     // A weight lambda[i] in [0, 1] per breakpoint, summing to 1
     // (constraint "convexity"), in an SOS2 set "sos2" so that at most two
     // neighbouring weights are nonzero. Needs a backend with SOS2 support:
     // "scip" has it, "highs" throws.
     Sos2,
-    // A fill fraction delta[j] in [0, 1] per segment, and a binary
-    // full[j] per segment but the last, constrained so that a segment
-    // only starts once the one before it is full. Ordinary variables and
-    // constraints only, so any backend that solves MILPs can solve it.
-    Incremental,
 };
 
 // What Block::add_piecewise returns.
@@ -181,13 +182,13 @@ public:
     // finite, or `points` decreases anywhere; or if a child block or
     // constraint named `name` already exists here.
     Piecewise add_piecewise(std::string name, LinearExpression x, std::vector<double> points,
-                            std::vector<double> values, PiecewiseMethod method = PiecewiseMethod::Sos2);
+                            std::vector<double> values, PiecewiseMethod method = PiecewiseMethod::Incremental);
 
     // The same, with values[i] = f(points[i]).
     template <typename F>
         requires std::is_invocable_r_v<double, F&, double>
     Piecewise add_piecewise(std::string name, LinearExpression x, std::vector<double> points, F&& f,
-                            PiecewiseMethod method = PiecewiseMethod::Sos2) {
+                            PiecewiseMethod method = PiecewiseMethod::Incremental) {
         std::vector<double> values;
         values.reserve(points.size());
         for (double p : points) values.push_back(f(p));

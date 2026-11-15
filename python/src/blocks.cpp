@@ -271,7 +271,7 @@ void bind_block_api(nb::class_<Self>& cls) {
                                                          std::move(ys), method);
                 return PyPiecewise{std::move(f.value), nb::cast(child_of(self, child))};
             },
-            "name"_a, "x"_a, "points"_a, "values"_a, nb::kw_only(), "method"_a = PiecewiseMethod::Sos2,
+            "name"_a, "x"_a, "points"_a, "values"_a, nb::kw_only(), "method"_a = PiecewiseMethod::Incremental,
             "Model the piecewise linear function through (points[i], values[i]) at `x`, a Variable or linear "
             "expression. `values` may instead be a callable, `point -> value`. `points` must be "
             "non-decreasing; a repeated point makes a jump, and `x` is limited to [points[0], points[-1]]. "
@@ -366,11 +366,11 @@ void bind_blocks(nb::module_& m) {
         .value("Maximize", ObjectiveSense::Maximize);
 
     nb::enum_<PiecewiseMethod>(m, "PiecewiseMethod", "How Block.add_piecewise models a piecewise linear function.")
-        .value("Sos2", PiecewiseMethod::Sos2,
-               "One weight per point, in an SOS2 set. Needs a backend with SOS2 support (\"scip\").")
         .value("Incremental", PiecewiseMethod::Incremental,
-               "A fill fraction per segment, plus binaries that fill the segments in order. Works with any "
-               "backend that solves MILPs.");
+               "The default. A fill fraction per segment, plus binaries that fill the segments in order. "
+               "Works with any backend that solves MILPs.")
+        .value("Sos2", PiecewiseMethod::Sos2,
+               "One weight per point, in an SOS2 set. Needs a backend with SOS2 support (\"scip\").");
 
     nb::class_<ConstraintRef>(m, "ConstraintRef", "A handle to a constraint owned by a Block or Model.")
         .def("__eq__", [](const ConstraintRef& a, const ConstraintRef& b) { return a == b; }, nb::is_operator())

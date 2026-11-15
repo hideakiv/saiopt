@@ -8,9 +8,10 @@ such a function from its breakpoints and gives back f(x) as a
 ``LinearExpression``, which you use anywhere an expression goes.
 
 When the function is nonconvex, such as a cost that gets cheaper per
-unit, an LP can't represent it. saiopt then adds auxiliary variables,
-together with either an SOS2 set or binary variables, so the solver picks
-the right segment.
+unit, an LP can't represent it. saiopt adds auxiliary variables so that
+the solver picks the right segment. By default these are binary
+variables, which every backend can solve. An SOS2 set is the
+alternative, for backends that support one.
 
 Step 1: the model
 -----------------
@@ -42,12 +43,12 @@ vectors: a braced list's commas would split the macro's arguments.
    SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, cost_a.value + 4.0 * from_b);
 
 ``cost_a`` is a ``Piecewise``, and ``cost_a.value`` is the cost of
-``from_a`` units from supplier A. Solve with SCIP, because this model uses
-an SOS2 set (see `How it works`_ below):
+``from_a`` units from supplier A. The model now has binary variables, so
+it's a MILP, which any backend solves:
 
 .. code-block:: cpp
 
-   SolveResult result = create_solver(model, "scip")->solve();
+   SolveResult result = create_solver(model, "highs")->solve();
    std::printf("cost %g: %g from A\n", result.objective_value, result.value(from_a));
 
 .. code-block:: text
@@ -71,30 +72,33 @@ The functions behind the macro are ``Block::add_piecewise(name, x, points,
 values)`` and an overload that takes the function instead of ``values``.
 ``x`` can be any ``LinearExpression``, not just a variable.
 
-Solving with HiGHS
-------------------
+Using an SOS2 set instead
+-------------------------
 
-HiGHS doesn't support SOS2 sets, so ``create_solver(model, "highs")``
-throws ``std::runtime_error`` for the model above. Pass
-``PiecewiseMethod::Incremental`` as a last argument to build the same
-function from binary variables instead. Every backend can solve that
-form:
+Pass ``PiecewiseMethod::Sos2`` as a last argument to model the same
+function with an SOS2 set. This needs a backend that supports SOS2 sets,
+such as ``"scip"``. HiGHS doesn't support them, so
+``create_solver(model, "highs")`` throws ``std::runtime_error`` for such a
+model.
 
 .. code-block:: cpp
 
-   Model with_highs;
-   SAIOPT_VAR(with_highs, from_a2, .bounds = {0.0, kInfinity});
-   SAIOPT_VAR(with_highs, from_b2, .bounds = {0.0, kInfinity});
-   SAIOPT_CONSTRAINT(with_highs, demand2, from_a2 + from_b2 == 180.0);
-   SAIOPT_PIECEWISE(with_highs, cost_a2, from_a2, amounts, costs, PiecewiseMethod::Incremental);
-   SAIOPT_OBJECTIVE(with_highs, ObjectiveSense::Minimize, cost_a2.value + 4.0 * from_b2);
+   Model sos_model;
+   SAIOPT_VAR(sos_model, from_a2, .bounds = {0.0, kInfinity});
+   SAIOPT_VAR(sos_model, from_b2, .bounds = {0.0, kInfinity});
+   SAIOPT_CONSTRAINT(sos_model, demand2, from_a2 + from_b2 == 180.0);
+   SAIOPT_PIECEWISE(sos_model, sos_cost, from_a2, amounts, costs, PiecewiseMethod::Sos2);
+   SAIOPT_OBJECTIVE(sos_model, ObjectiveSense::Minimize, sos_cost.value + 4.0 * from_b2);
 
-   SolveResult highs_result = create_solver(with_highs, "highs")->solve();
-   std::printf("cost %g: %g from A\n", highs_result.objective_value, highs_result.value(from_a2));
+   SolveResult sos_result = create_solver(sos_model, "scip")->solve();
+   std::printf("cost %g: %g from A\n", sos_result.objective_value, sos_result.value(from_a2));
 
 .. code-block:: text
 
    cost 660: 180 from A
+
+Both give the same answer. Which one solves faster depends on the
+model and the solver.
 
 How it works
 ------------
@@ -105,27 +109,30 @@ the block you called it on, tying those variables to ``x``.
 ``cost_a.block`` is the child's ``BlockRef``, and the auxiliary variables
 depend on the method:
 
-``PiecewiseMethod::Sos2`` (the default)
+``PiecewiseMethod::Incremental`` (the default)
+   A fraction ``delta[j]`` between 0 and 1 for how much of segment ``j``
+   is used, and a binary ``full[j]`` for each segment but the last.
+   Their constraints let a segment start only once the one before it is
+   full. Then ``x`` is the first point plus each segment's width times
+   its ``delta``, and f(x) is built the same way from ``values``.
+
+``PiecewiseMethod::Sos2``
    A weight ``lambda[i]`` between 0 and 1 for each breakpoint. The
    weights add up to 1 (constraint ``convexity``), and an SOS2 set
    ``sos2`` lets at most two neighbouring weights be nonzero. Then ``x``
    is the sum of ``lambda[i] * points[i]``, and f(x) is the same
    combination of ``values``.
 
-``PiecewiseMethod::Incremental``
-   A fraction ``delta[j]`` between 0 and 1 for how much of segment ``j``
-   is used, and a binary ``full[j]`` for each segment but the last.
-   Their constraints let a segment start only once the one before it is
-   full.
-
 .. code-block:: cpp
 
-   const Block& aux = with_highs.block(cost_a2.block);
+   const Block& aux = model.block(cost_a.block);
    std::printf("%zu %zu\n", aux.vars("delta").size(), aux.vars("full").size());
+   std::printf("%zu\n", sos_model.block(sos_cost.block).vars("lambda").size());
 
 .. code-block:: text
 
    2 1
+   3
 
 Either way, ``x`` can't go outside the first and last breakpoint. Here,
 ``from_a`` can't exceed 250. To leave ``x`` unrestricted, add
@@ -156,7 +163,7 @@ is shipped looks like this:
    std::vector<double> charges{0.0, 50.0, 350.0};
    SAIOPT_PIECEWISE(shipping, fee, shipped, loads, charges);
    SAIOPT_OBJECTIVE(shipping, ObjectiveSense::Minimize, fee.value);
-   std::printf("%g\n", create_solver(shipping, "scip")->solve().objective_value);
+   std::printf("%g\n", create_solver(shipping, "highs")->solve().objective_value);
 
 .. code-block:: text
 
@@ -175,8 +182,8 @@ SOS2 sets directly
 
 ``Block::add_sos2(name, vars)`` adds an SOS2 set over any variables of
 the block or its descendants: at most two of them may be nonzero, and
-those two must be neighbours in the order given. Like ``add_piecewise``
-with the default method, it needs the ``"scip"`` backend. SOS2 sets go
+those two must be neighbours in the order given. Like
+``PiecewiseMethod::Sos2``, it needs the ``"scip"`` backend. SOS2 sets go
 along when a block is serialized, so they work with :doc:`mpi` too.
 
 .. code-block:: cpp

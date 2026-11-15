@@ -51,6 +51,16 @@ TEST_CASE("minimizes a nonconvex piecewise function", "[piecewise]") {
     REQUIRE(result.value(x) == Approx(4.0));
 }
 
+TEST_CASE("the default method is Incremental, which HiGHS can solve", "[piecewise]") {
+    Model model;
+    SAIOPT_VAR(model, x, .bounds = {1.0, kInfinity});
+    SAIOPT_PIECEWISE(model, f, x, kPoints, kValues);
+    SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, f.value);
+
+    REQUIRE(model.block("f")->var("delta[0]").has_value());
+    REQUIRE(create_solver(model, "highs")->solve().objective_value == Approx(1.0));
+}
+
 TEST_CASE("constrains a variable to a piecewise function, with x fixed between points", "[piecewise]") {
     auto method = GENERATE(PiecewiseMethod::Sos2, PiecewiseMethod::Incremental);
 
@@ -115,8 +125,8 @@ TEST_CASE("x is limited to the range of the points", "[piecewise]") {
 TEST_CASE("the auxiliary variables live in a child block named after the function", "[piecewise]") {
     Model model;
     SAIOPT_VAR(model, x, .bounds = {0.0, 6.0});
-    SAIOPT_PIECEWISE(model, sos, x, kPoints, kValues);
-    SAIOPT_PIECEWISE(model, inc, x, kPoints, kValues, PiecewiseMethod::Incremental);
+    SAIOPT_PIECEWISE(model, sos, x, kPoints, kValues, PiecewiseMethod::Sos2);
+    SAIOPT_PIECEWISE(model, inc, x, kPoints, kValues);
 
     REQUIRE(model.block("sos") == &model.block(sos.block));
     REQUIRE(model.block("sos")->vars("lambda").size() == 4);
@@ -158,7 +168,7 @@ TEST_CASE("a name already used by a child block or constraint throws", "[piecewi
 TEST_CASE("HiGHS rejects an SOS2 set, naming the way out", "[piecewise][sos2]") {
     Model model;
     SAIOPT_VAR(model, x, .bounds = {0.0, 6.0});
-    SAIOPT_PIECEWISE(model, f, x, kPoints, kValues);
+    SAIOPT_PIECEWISE(model, f, x, kPoints, kValues, PiecewiseMethod::Sos2);
     SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, f.value);
     REQUIRE_THROWS_WITH(create_solver(model, "highs"),
                         ContainsSubstring("SOS2") && ContainsSubstring("f.sos2") &&

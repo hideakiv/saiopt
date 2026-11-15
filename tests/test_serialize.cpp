@@ -120,7 +120,7 @@ TEST_CASE("an SOS2 set round-trips through serialize/deserialize", "[serialize][
     std::vector<double> values{0.0, 4.0, 1.0, 6.0};
     Block region;
     SAIOPT_VAR(region, x, .bounds = {1.0, kInfinity});
-    SAIOPT_PIECEWISE(region, f, x, points, values);
+    SAIOPT_PIECEWISE(region, f, x, points, values, PiecewiseMethod::Sos2);
     region.set_objective(f.value);
 
     Model model(Block::deserialize(region.serialize()), ObjectiveSense::Minimize);

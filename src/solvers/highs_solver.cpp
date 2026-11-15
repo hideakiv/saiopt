@@ -164,6 +164,11 @@ double bound_tolerance(double bound) { return 1e-6 * std::max(1.0, std::abs(boun
 
 HighsSolver::HighsSolver(const Model& model, const SolverOptions& options) : lp_(flatten(model)) {
     if (lp_.has_quadratic_objective() && !is_pure_lp(lp_)) throw_unsupported_miqp();
+    if (lp_.has_sos2()) {
+        throw std::runtime_error("HiGHS doesn't support SOS2 sets, and the model has one (\"" + lp_.sos2_name.front() +
+                                 "\"); use the \"scip\" backend instead, or, for a piecewise linear "
+                                 "function, PiecewiseMethod::Incremental");
+    }
     highs_ = Highs_create();
     try {
         Highs_setBoolOptionValue(highs_, "output_flag", 0);

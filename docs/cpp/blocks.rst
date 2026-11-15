@@ -201,5 +201,5 @@ arrives from elsewhere, for example from another process:
 
    Model alone(build_facility(40.0, 2.0), ObjectiveSense::Minimize);
 
-Next, :doc:`solving` covers solver options and everything a
-``SolveResult`` holds.
+Next, :doc:`piecewise` models functions made of straight segments, such
+as a tiered price.

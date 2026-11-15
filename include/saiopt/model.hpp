@@ -159,6 +159,8 @@ public:
     using Block::add_blocks_scaled;
     using Block::add_constraint;
     using Block::add_constraints;
+    using Block::add_piecewise;
+    using Block::add_sos2;
     using Block::add_var;
     using Block::add_vars;
     using Block::block;

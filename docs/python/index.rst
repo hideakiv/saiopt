@@ -26,6 +26,7 @@ closely; the `C++ guide <../cpp/>`_ covers that side.
    expressions
    indexed
    blocks
+   piecewise
    solving
    modifying
    mpi

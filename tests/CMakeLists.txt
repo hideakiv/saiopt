@@ -9,7 +9,7 @@ FetchContent_MakeAvailable(Catch2)
 
 add_executable(saiopt_tests test_lp.cpp test_block.cpp test_macros.cpp test_serialize.cpp test_scip.cpp
   test_write_model.cpp test_initial_solution.cpp
-  test_quadratic.cpp)
+  test_quadratic.cpp test_piecewise.cpp)
 # saiopt_highs/saiopt_scip are only used through their "highs"/"scip"
 # self-registration (see saiopt/solver.hpp) -- --no-as-needed keeps the
 # linker from dropping them out of NEEDED just because no symbol here

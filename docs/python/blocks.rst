@@ -169,5 +169,5 @@ arrives from elsewhere, for example from another process:
 
    alone = so.Model.from_block(build_facility(40, 2.0), so.ObjectiveSense.Minimize)
 
-Next, :doc:`solving` covers solver options and everything a
-``SolveResult`` holds.
+Next, :doc:`piecewise` models functions made of straight segments, such
+as a tiered price.

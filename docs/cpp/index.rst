@@ -34,6 +34,7 @@ saiopt also has a Python package with the same API; see the
    expressions
    indexed
    blocks
+   piecewise
    solving
    modifying
    mpi

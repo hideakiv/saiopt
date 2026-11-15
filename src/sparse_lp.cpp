@@ -88,7 +88,7 @@ private:
         auto resolve = [&](Variable var) -> std::int64_t {
             if (!own_scope.count(var.block())) {
                 throw std::runtime_error(
-                    "a block's constraints and objective may only reference variables that "
+                    "a block's constraints, SOS2 sets, and objective may only reference variables that "
                     "belong to the block itself or to one of its attached sub-blocks");
             }
             return columns_.at(var);
@@ -108,6 +108,14 @@ private:
                 fc.coefficients.emplace_back(resolve(var), coeff);
             }
             constraints_.push_back(std::move(fc));
+        }
+
+        std::vector<std::string> sos2_names(block.sos2_.size());
+        for (const auto& [name, index] : block.sos2_names_) sos2_names[index] = qualify(prefix, name);
+        for (std::size_t i = 0; i < block.sos2_.size(); ++i) {
+            for (Variable var : block.sos2_[i].vars) sos2_index_.push_back(resolve(var));
+            sos2_start_.push_back(static_cast<std::int64_t>(sos2_index_.size()));
+            sos2_name_.push_back(std::move(sos2_names[i]));
         }
 
         for (const auto& [var, coeff] : block.objective_.linear().terms()) {
@@ -204,6 +212,12 @@ private:
             lp.a_start.push_back(static_cast<std::int64_t>(lp.a_index.size()));
         }
 
+        if (!sos2_name_.empty()) {
+            lp.sos2_start = sos2_start_;
+            lp.sos2_index = sos2_index_;
+            lp.sos2_name = sos2_name_;
+        }
+
         return lp;
     }
 
@@ -215,6 +229,9 @@ private:
     std::vector<std::string> var_names_;
     std::unordered_map<BlockId, std::unordered_set<BlockId>> descendants_;
     std::vector<FlatConstraint> constraints_;
+    std::vector<std::int64_t> sos2_start_{0};
+    std::vector<std::int64_t> sos2_index_;
+    std::vector<std::string> sos2_name_;
     QuadraticExpression objective_;
 };
 

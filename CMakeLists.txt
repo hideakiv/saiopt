@@ -42,6 +42,7 @@ add_library(saiopt
   src/sparse_lp.cpp
   src/solver.cpp
   src/model.cpp
+  src/piecewise.cpp
 )
 target_include_directories(saiopt
   PUBLIC

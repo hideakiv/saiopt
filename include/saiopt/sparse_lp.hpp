@@ -57,11 +57,20 @@ struct SparseLp {
     // Each row's name, qualified the same way as col_name.
     std::vector<std::string> row_name;
 
+    // SOS2 sets (see Block::add_sos2), row-wise: set k's columns, in
+    // order, are sos2_index[sos2_start[k] .. sos2_start[k + 1]). All three
+    // are empty when there are none; otherwise sos2_start has one more
+    // entry than sos2_name. Names are qualified the same way as col_name.
+    std::vector<std::int64_t> sos2_start;
+    std::vector<std::int64_t> sos2_index;
+    std::vector<std::string> sos2_name;
+
     // HiGHS objective sense: +1 minimize, -1 maximize.
     int sense = 1;
     double offset = 0.0;
 
     bool has_quadratic_objective() const noexcept { return !q_value.empty(); }
+    bool has_sos2() const noexcept { return !sos2_name.empty(); }
 };
 
 SparseLp flatten(const Model& model);

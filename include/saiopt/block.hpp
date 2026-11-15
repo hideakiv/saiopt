@@ -38,6 +38,29 @@ private:
 
 struct ChildBlock;
 
+// How Block::add_piecewise models a piecewise linear function.
+enum class PiecewiseMethod {
+    // A weight lambda[i] in [0, 1] per breakpoint, summing to 1
+    // (constraint "convexity"), in an SOS2 set "sos2" so that at most two
+    // neighbouring weights are nonzero. Needs a backend with SOS2 support:
+    // "scip" has it, "highs" throws.
+    Sos2,
+    // A fill fraction delta[j] in [0, 1] per segment, and a binary
+    // full[j] per segment but the last, constrained so that a segment
+    // only starts once the one before it is full. Ordinary variables and
+    // constraints only, so any backend that solves MILPs can solve it.
+    Incremental,
+};
+
+// What Block::add_piecewise returns.
+struct Piecewise {
+    // f(x), as an expression over the auxiliary variables: use it in an
+    // objective, or constrain a variable to it (`y == f.value`).
+    LinearExpression value;
+    // The child block holding those auxiliary variables.
+    BlockRef block;
+};
+
 // A composable sub-model: its own variables, constraints, and a local
 // objective contribution, which can itself have further Blocks attached.
 //
@@ -131,6 +154,44 @@ public:
         Indexed<K, ConstraintRef> result = Indexed<K, ConstraintRef>::from_map(std::move(map));
         indexed_constraint_groups_.emplace(std::move(name), IndexedConstraintGroup{std::move(ordered), std::any(result)});
         return result;
+    }
+
+    // Add a special ordered set of type 2 over `vars`, in the order given:
+    // at most two of them may be nonzero, and those two must be
+    // neighbours in that order. `vars` must belong to this block or its
+    // attached descendants, like a constraint's. Not every backend
+    // supports SOS2 sets: "scip" does, "highs" throws when the model is
+    // loaded. Throws std::runtime_error if a set named `name` already
+    // exists in this block, or if `vars` has fewer than two variables.
+    void add_sos2(std::string name, std::vector<Variable> vars);
+
+    // Model the piecewise linear function through (points[i], values[i]),
+    // evaluated at `x`, and return it as an expression (see Piecewise).
+    //
+    // `points` must be non-decreasing. A point repeated twice makes a
+    // jump: at that x, the function can take any value between the two.
+    // `x` is restricted to [points.front(), points.back()].
+    //
+    // The auxiliary variables go into a new child block named `name`
+    // (see PiecewiseMethod for what they are), and the constraint tying
+    // them to `x` into this block, also named `name`, so it may reference
+    // any variable a constraint here could. Throws std::runtime_error,
+    // leaving this block unchanged, if `points` and `values` differ in
+    // length, have fewer than two entries, contain a number that isn't
+    // finite, or `points` decreases anywhere; or if a child block or
+    // constraint named `name` already exists here.
+    Piecewise add_piecewise(std::string name, LinearExpression x, std::vector<double> points,
+                            std::vector<double> values, PiecewiseMethod method = PiecewiseMethod::Sos2);
+
+    // The same, with values[i] = f(points[i]).
+    template <typename F>
+        requires std::is_invocable_r_v<double, F&, double>
+    Piecewise add_piecewise(std::string name, LinearExpression x, std::vector<double> points, F&& f,
+                            PiecewiseMethod method = PiecewiseMethod::Sos2) {
+        std::vector<double> values;
+        values.reserve(points.size());
+        for (double p : points) values.push_back(f(p));
+        return add_piecewise(std::move(name), std::move(x), std::move(points), std::move(values), method);
     }
 
     // Set this block's own local objective contribution. Only meaningful
@@ -411,6 +472,10 @@ private:
         Constraint constraint;
     };
 
+    struct Sos2Data {
+        std::vector<Variable> vars;
+    };
+
     // One indexed group's worth of state, recorded at add_vars(name, ...)
     // /add_constraints/add_blocks[_scaled] time: `ordered` is every item
     // in declaration order, type-erased down to the value type V (backs
@@ -467,11 +532,13 @@ private:
     BlockId id_;
     std::vector<VarData> vars_;
     std::vector<ConstraintData> constraints_;
+    std::vector<Sos2Data> sos2_;
     QuadraticExpression objective_;
     std::vector<ChildBlock> children_;
     std::unordered_map<std::string, Variable> var_names_;
     std::unordered_map<std::string, ConstraintRef> constraint_names_;
     std::unordered_map<std::string, std::size_t> child_names_;
+    std::unordered_map<std::string, std::size_t> sos2_names_;
     std::unordered_map<std::string, IndexedVarGroup> indexed_var_groups_;
     std::unordered_map<std::string, IndexedConstraintGroup> indexed_constraint_groups_;
     std::unordered_map<std::string, IndexedBlockGroup> indexed_block_groups_;

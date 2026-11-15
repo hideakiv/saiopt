@@ -29,6 +29,18 @@ ConstraintRef Block::add_constraint(std::string name, Constraint constraint) {
     return ref;
 }
 
+void Block::add_sos2(std::string name, std::vector<Variable> vars) {
+    if (vars.size() < 2) {
+        throw std::runtime_error("the SOS2 set \"" + name + "\" needs at least two variables");
+    }
+    auto [it, inserted] = sos2_names_.emplace(name, sos2_.size());
+    (void)it;
+    if (!inserted) {
+        throw std::runtime_error("an SOS2 set named \"" + name + "\" already exists in this block");
+    }
+    sos2_.push_back(Sos2Data{std::move(vars)});
+}
+
 void Block::set_objective(QuadraticExpression expr) { objective_ = std::move(expr); }
 
 BlockRef Block::add_block(std::string name, Block child) {
@@ -277,6 +289,16 @@ RebuiltBlock read_block(Reader& reader) {
 
     block.set_objective(read_quadratic_expression(reader, own_vars, children));
 
+    std::uint64_t num_sos2 = reader.read_u64();
+    for (std::uint64_t i = 0; i < num_sos2; ++i) {
+        std::string name = reader.read_string();
+        std::uint64_t num_members = reader.read_u64();
+        std::vector<Variable> members;
+        members.reserve(static_cast<std::size_t>(num_members));
+        for (std::uint64_t j = 0; j < num_members; ++j) members.push_back(read_var_ref(reader, own_vars, children));
+        block.add_sos2(std::move(name), std::move(members));
+    }
+
     for (std::size_t i = 0; i < children.size(); ++i) {
         block.add_block_scaled(child_names[i], std::move(children[i].block), child_multipliers[i]);
     }
@@ -353,6 +375,15 @@ void Block::write_block(std::vector<std::byte>& out, const Block& block) {
     }
 
     write_quadratic_expression(out, block, block.objective_);
+
+    std::vector<std::string> sos2_names(block.sos2_.size());
+    for (const auto& [name, index] : block.sos2_names_) sos2_names[index] = name;
+    append_u64(out, block.sos2_.size());
+    for (std::size_t i = 0; i < block.sos2_.size(); ++i) {
+        append_string(out, sos2_names[i]);
+        append_u64(out, block.sos2_[i].vars.size());
+        for (Variable var : block.sos2_[i].vars) write_var_ref(out, block, var);
+    }
 }
 
 std::vector<std::byte> Block::serialize() const {

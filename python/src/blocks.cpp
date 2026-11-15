@@ -7,6 +7,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -151,6 +152,50 @@ std::vector<std::pair<PyKey, V>> in_declaration_order(const Indexed<PyKey, V>& t
     return result;
 }
 
+// A group of variables or constraints as a dict from key to item, in
+// declaration order. `typed<K>()` is the group as an Indexed<K, V>, and
+// throws if it wasn't declared with key type K. A group declared from
+// Python is keyed by PyKey; one declared in C++ (such as add_piecewise's
+// "lambda") by a C++ type, which converts to the matching Python key.
+template <typename V, typename Typed>
+nb::dict group_as_dict(const std::vector<V>& ordered, Typed typed) {
+    std::unordered_map<V, nb::object> key_of;
+    auto keyed_by = [&]<typename K>() {
+        try {
+            for (const auto& [k, v] : typed.template operator()<K>()) {
+                if constexpr (std::is_same_v<K, PyKey>) {
+                    key_of.emplace(v, k.obj);
+                } else {
+                    key_of.emplace(v, nb::cast(k));
+                }
+            }
+            return true;
+        } catch (const std::runtime_error&) {
+            return false;
+        }
+    };
+    if (!keyed_by.template operator()<PyKey>() && !keyed_by.template operator()<std::size_t>() &&
+        !keyed_by.template operator()<int>() && !keyed_by.template operator()<std::string>()) {
+        typed.template operator()<PyKey>();  // throws the key-type error
+    }
+    nb::dict result;
+    for (const V& v : ordered) result[key_of.at(v)] = v;
+    return result;
+}
+
+// What Block.add_piecewise returns: f(x), and the child block holding its
+// auxiliary variables.
+struct PyPiecewise {
+    LinearExpression value;
+    nb::object block;  // a PyBlock
+};
+
+LinearExpression linear_of(nb::handle expr, const char* what) {
+    auto l = as_linear(expr);
+    if (!l) throw nb::type_error((std::string(what) + " must be a number, a Variable, or a linear expression").c_str());
+    return std::move(*l);
+}
+
 // The methods Model and Block share. `Self` is Model (used directly) or
 // PyBlock (resolved through its path on every call; see PyBlock).
 template <typename Self>
@@ -201,6 +246,37 @@ void bind_block_api(nb::class_<Self>& cls) {
             "name"_a, "keys"_a, "rule"_a,
             "Add one constraint per key, `rule(key)`, each named `name[key]`, returning a dict from key to "
             "ConstraintRef.")
+        .def(
+            "add_sos2",
+            [](Self& self, std::string name, std::vector<Variable> vars) {
+                target(self).add_sos2(std::move(name), std::move(vars));
+            },
+            "name"_a, "vars"_a,
+            "Add a special ordered set of type 2 over `vars`, in the order given: at most two of them may be "
+            "nonzero, and those two must be neighbours. The \"scip\" backend supports these; \"highs\" "
+            "doesn't, and raises.")
+        .def(
+            "add_piecewise",
+            [](Self& self, std::string name, nb::handle x, std::vector<double> points, nb::object values,
+               PiecewiseMethod method) {
+                std::vector<double> ys;
+                if (PyCallable_Check(values.ptr())) {
+                    ys.reserve(points.size());
+                    for (double p : points) ys.push_back(nb::cast<double>(values(p)));
+                } else {
+                    ys = nb::cast<std::vector<double>>(values);
+                }
+                std::string child = name;
+                Piecewise f = target(self).add_piecewise(std::move(name), linear_of(x, "x"), std::move(points),
+                                                         std::move(ys), method);
+                return PyPiecewise{std::move(f.value), nb::cast(child_of(self, child))};
+            },
+            "name"_a, "x"_a, "points"_a, "values"_a, nb::kw_only(), "method"_a = PiecewiseMethod::Sos2,
+            "Model the piecewise linear function through (points[i], values[i]) at `x`, a Variable or linear "
+            "expression. `values` may instead be a callable, `point -> value`. `points` must be "
+            "non-decreasing; a repeated point makes a jump, and `x` is limited to [points[0], points[-1]]. "
+            "The auxiliary variables go into a new child block `name`, and the constraint tying them to `x` "
+            "into this block, also named `name`. Returns a Piecewise, whose `value` is f(x).")
         .def(
             "add_block",
             [](Self& self, const std::string& name, PyBlock& child, double multiplier) {
@@ -260,10 +336,7 @@ void bind_block_api(nb::class_<Self>& cls) {
             "vars",
             [](Self& self, const std::string& name) {
                 auto& b = target(self);
-                Indexed<PyKey, Variable> typed = b.template vars<PyKey>(name);
-                nb::dict result;
-                for (const auto& [k, v] : in_declaration_order(typed, b.vars(name))) result[k.obj] = v;
-                return result;
+                return group_as_dict(b.vars(name), [&]<typename K>() { return b.template vars<K>(name); });
             },
             "name"_a, "The group of variables added by add_vars(name, ...), as a dict from key to Variable.")
         .def("constraint", [](Self& self, const std::string& name) { return target(self).constraint(name); },
@@ -272,10 +345,8 @@ void bind_block_api(nb::class_<Self>& cls) {
             "constraints",
             [](Self& self, const std::string& name) {
                 auto& b = target(self);
-                Indexed<PyKey, ConstraintRef> typed = b.template constraints<PyKey>(name);
-                nb::dict result;
-                for (const auto& [k, c] : in_declaration_order(typed, b.constraints(name))) result[k.obj] = c;
-                return result;
+                return group_as_dict(b.constraints(name),
+                                     [&]<typename K>() { return b.template constraints<K>(name); });
             },
             "name"_a,
             "The group of constraints added by add_constraints(name, ...), as a dict from key to ConstraintRef.");
@@ -293,6 +364,13 @@ void bind_blocks(nb::module_& m) {
     nb::enum_<ObjectiveSense>(m, "ObjectiveSense")
         .value("Minimize", ObjectiveSense::Minimize)
         .value("Maximize", ObjectiveSense::Maximize);
+
+    nb::enum_<PiecewiseMethod>(m, "PiecewiseMethod", "How Block.add_piecewise models a piecewise linear function.")
+        .value("Sos2", PiecewiseMethod::Sos2,
+               "One weight per point, in an SOS2 set. Needs a backend with SOS2 support (\"scip\").")
+        .value("Incremental", PiecewiseMethod::Incremental,
+               "A fill fraction per segment, plus binaries that fill the segments in order. Works with any "
+               "backend that solves MILPs.");
 
     nb::class_<ConstraintRef>(m, "ConstraintRef", "A handle to a constraint owned by a Block or Model.")
         .def("__eq__", [](const ConstraintRef& a, const ConstraintRef& b) { return a == b; }, nb::is_operator())
@@ -327,6 +405,11 @@ void bind_blocks(nb::module_& m) {
             },
             "data"_a);
     bind_block_api(block);
+
+    nb::class_<PyPiecewise>(m, "Piecewise", "A piecewise linear function, as Block.add_piecewise returns it.")
+        .def_ro("value", &PyPiecewise::value, "f(x), as a linear expression.")
+        .def_ro("block", &PyPiecewise::block, nb::sig("def block(self) -> Block"),
+                "The child block holding the auxiliary variables.");
 
     nb::class_<Model> model(m, "Model",
                             "The root of a Block tree, plus the objective's sense -- the thing a Solver solves.");

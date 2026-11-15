@@ -1,8 +1,10 @@
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "saiopt/macros.hpp"
 #include "saiopt/model.hpp"
@@ -109,4 +111,23 @@ TEST_CASE("serialize rejects a constraint referencing an out-of-subtree variable
     child.add_constraint("bad", r <= 5.0);
 
     REQUIRE_THROWS_AS(child.serialize(), std::runtime_error);
+}
+
+TEST_CASE("an SOS2 set round-trips through serialize/deserialize", "[serialize][sos2]") {
+    // The same nonconvex function as test_piecewise.cpp: without its SOS2
+    // set, the minimum would drop from 1 to 0.25.
+    std::vector<double> points{0.0, 2.0, 4.0, 6.0};
+    std::vector<double> values{0.0, 4.0, 1.0, 6.0};
+    Block region;
+    SAIOPT_VAR(region, x, .bounds = {1.0, kInfinity});
+    SAIOPT_PIECEWISE(region, f, x, points, values);
+    region.set_objective(f.value);
+
+    Model model(Block::deserialize(region.serialize()), ObjectiveSense::Minimize);
+    REQUIRE(model.block("f") != nullptr);
+
+    SolveResult result = create_solver(model, "scip")->solve();
+    REQUIRE(result.optimal());
+    REQUIRE(result.objective_value == Approx(1.0));
+    REQUIRE_THROWS_WITH(create_solver(model, "highs"), Catch::Matchers::ContainsSubstring("SOS2"));
 }

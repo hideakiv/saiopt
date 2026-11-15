@@ -2,6 +2,7 @@
 
 #include <scip/scip.h>
 #include <scip/cons_nonlinear.h>
+#include <scip/cons_sos2.h>
 #include <scip/scipdefplugins.h>
 
 #include <algorithm>
@@ -242,6 +243,24 @@ ScipSolver::ScipSolver(const Model& model, const SolverOptions& options) : lp_(f
                   "SCIPcreateConsBasicLinear");
             check(SCIPaddCons(scip, cons), "SCIPaddCons");
             scip_conss_.push_back(cons);
+            check(SCIPreleaseCons(scip, &cons), "SCIPreleaseCons");
+        }
+
+        // Weights only fix each set's order, so 1, 2, ... will do.
+        std::vector<std::string> sos2_names = file_safe_names(lp_.sos2_name);
+        for (std::size_t k = 0; k < sos2_names.size(); ++k) {
+            std::vector<SCIP_VAR*> members;
+            std::vector<double> weights;
+            for (std::int64_t idx = lp_.sos2_start[k]; idx < lp_.sos2_start[k + 1]; ++idx) {
+                auto col = static_cast<std::size_t>(lp_.sos2_index[static_cast<std::size_t>(idx)]);
+                members.push_back(as_var(scip_vars_[col]));
+                weights.push_back(static_cast<double>(weights.size() + 1));
+            }
+            SCIP_CONS* cons = nullptr;
+            check(SCIPcreateConsBasicSOS2(scip, &cons, sos2_names[k].c_str(), static_cast<int>(members.size()),
+                                          members.data(), weights.data()),
+                  "SCIPcreateConsBasicSOS2");
+            check(SCIPaddCons(scip, cons), "SCIPaddCons");
             check(SCIPreleaseCons(scip, &cons), "SCIPreleaseCons");
         }
 

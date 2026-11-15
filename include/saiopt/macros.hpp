@@ -80,6 +80,18 @@
 #define SAIOPT_BLOCKS_SCALED(block, ident, index, child, multiplier) \
     [[maybe_unused]] auto ident = (block).add_blocks_scaled(#ident, (index), (child), (multiplier))
 
+// Declare a piecewise linear function of `x` (see Block::add_piecewise),
+// named after `ident`; `ident` is the returned Piecewise, so `ident.value`
+// is f(x). `values` is a vector of f at each point or a callable `point ->
+// f(point)`; wrap a lambda in parentheses, as for SAIOPT_CONSTRAINTS. An
+// optional trailing PiecewiseMethod picks the formulation:
+//
+//   SAIOPT_PIECEWISE(model, cost, x, points, values);
+//   SAIOPT_PIECEWISE(model, cost, x, points, values, PiecewiseMethod::Incremental);
+//   SAIOPT_PIECEWISE(model, cost, x, points, ([](double p) { return p * p; }));
+#define SAIOPT_PIECEWISE(block, ident, x, points, values, ...) \
+    [[maybe_unused]] auto ident = (block).add_piecewise(#ident, (x), (points), (values) __VA_OPT__(, ) __VA_ARGS__)
+
 // set_objective has no name to derive -- an objective is never looked
 // back up by string the way a var/constraint/block is -- so this is only
 // a thin wrapper, for consistency with the macros above. Forwards

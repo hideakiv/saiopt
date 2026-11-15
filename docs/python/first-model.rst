@@ -27,27 +27,31 @@ A ``Model`` is the thing you solve. It starts out empty.
 Step 2: add variables
 ---------------------
 
-``add_var`` adds one variable and returns a handle to it. Every variable
-has a name, which must be unique within the model. Variables are
-continuous and unbounded by default, so give these a lower bound of 0
-(you can't buy negative bread). ``so.inf`` is saiopt's infinite bound.
+Assigning ``so.Var(...)`` to an attribute of the model adds a variable,
+named after the attribute. Reading the attribute back, as
+``model.bread``, gives you the variable. Variables are continuous and
+unbounded by default, so give these a lower bound of 0 (you can't buy
+negative bread). ``so.inf`` is saiopt's infinite bound.
 
 .. code-block:: python
 
-   bread = model.add_var("bread", bounds=(0, so.inf))
-   milk = model.add_var("milk", bounds=(0, so.inf))
+   model.bread = so.Var(bounds=(0, so.inf))
+   model.milk = so.Var(bounds=(0, so.inf))
+
+Every variable, constraint, and other item in a model has a name, unique
+within it, so you can always look it up again later.
 
 Step 3: add constraints
 -----------------------
 
 Arithmetic on variables builds expressions, and comparing an expression
-with ``<=``, ``>=``, or ``==`` builds a constraint. ``add_constraint``
-adds it to the model under a name:
+with ``<=``, ``>=``, or ``==`` builds a constraint. Assigning a
+constraint to an attribute adds it under that name:
 
 .. code-block:: python
 
-   model.add_constraint("protein", 4 * bread + 8 * milk >= 20)
-   model.add_constraint("calories", 100 * bread + 150 * milk >= 400)
+   model.protein = 4 * model.bread + 8 * model.milk >= 20
+   model.calories = 100 * model.bread + 150 * model.milk >= 400
 
 Step 4: set the objective
 -------------------------
@@ -56,7 +60,7 @@ The objective is an expression plus a direction: minimize or maximize.
 
 .. code-block:: python
 
-   model.set_objective(so.ObjectiveSense.Minimize, 2 * bread + 3 * milk)
+   model.set_objective(so.ObjectiveSense.Minimize, 2 * model.bread + 3 * model.milk)
 
 You can print a model to check what you've built:
 
@@ -98,8 +102,8 @@ read. Index the result with a variable to get its value.
 
    if result.optimal:
        print("cost:", result.objective_value)
-       print("bread:", result[bread])
-       print("milk:", result[milk])
+       print("bread:", result[model.bread])
+       print("milk:", result[model.milk])
    else:
        print("no optimal solution:", result.status)
 
@@ -124,14 +128,38 @@ The whole program
    import saiopt as so
 
    model = so.Model()
-   bread = model.add_var("bread", bounds=(0, so.inf))
-   milk = model.add_var("milk", bounds=(0, so.inf))
-   model.add_constraint("protein", 4 * bread + 8 * milk >= 20)
-   model.add_constraint("calories", 100 * bread + 150 * milk >= 400)
-   model.set_objective(so.ObjectiveSense.Minimize, 2 * bread + 3 * milk)
+   model.bread = so.Var(bounds=(0, so.inf))
+   model.milk = so.Var(bounds=(0, so.inf))
+   model.protein = 4 * model.bread + 8 * model.milk >= 20
+   model.calories = 100 * model.bread + 150 * model.milk >= 400
+   model.set_objective(so.ObjectiveSense.Minimize, 2 * model.bread + 3 * model.milk)
 
    result = so.create_solver(model, "highs").solve()
-   print(result.status, result.objective_value, result[bread], result[milk])
+   print(result.status, result.objective_value, result[model.bread], result[model.milk])
+
+Names that aren't attributes
+----------------------------
+
+The attribute name becomes the item's name, so it has to be a valid
+Python identifier. It also can't start with ``_`` or be the name of a
+``Model`` method, such as ``vars``. For any other name, or one computed
+while the program runs, use the ``add_*`` methods. They take the name
+as a string and return the new item:
+
+.. code-block:: python
+
+   other = so.Model()
+   for food in ["whole wheat", "rye"]:
+       other.add_var(food, bounds=(0, so.inf))
+
+   rye = other.var("rye")                    # look an item up by its name
+   other.add_constraint("at least one", other.var("whole wheat") + rye >= 1)
+
+Each attribute declaration has an ``add_*`` counterpart: ``add_var``,
+``add_vars``, ``add_constraint``, ``add_constraints``, ``add_block``,
+``add_blocks``, and ``add_piecewise``. The two styles can be mixed in one
+model. Within one model, a name declared through an attribute can't
+also be used for a different kind of item.
 
 Next, :doc:`expressions` covers what you can write inside constraints and
 objectives.

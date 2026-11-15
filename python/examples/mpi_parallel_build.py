@@ -24,16 +24,16 @@ capacity = 10.0 + rank
 cost_per_unit = 5.0 - 0.5 * rank
 
 region = so.Block()
-produce = region.add_var("produce", bounds=(0, capacity))
-region.set_objective(cost_per_unit * produce)
+region.produce = so.Var(bounds=(0, capacity))
+region.set_objective(cost_per_unit * region.produce)
 
 regions = saiopt.mpi.gather_blocks(region)
 
 if rank == 0:
     model = so.Model()
-    attached = model.add_blocks("region", range(size), lambda i: regions[i])
-    produced = {i: block.var("produce") for i, block in attached.items()}
-    model.add_constraint("meet_demand", so.quicksum(produced.values()) >= DEMAND)
+    model.region = so.Blocks(range(size), lambda i: regions[i])
+    produced = {i: block.produce for i, block in model.region.items()}
+    model.meet_demand = so.quicksum(produced.values()) >= DEMAND
     model.set_objective(so.ObjectiveSense.Minimize, 0)
 
     result = so.create_solver(model, "highs").solve()

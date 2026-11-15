@@ -10,11 +10,13 @@ examples use the diet model from :doc:`first-model`:
    import saiopt as so
 
    model = so.Model()
-   bread = model.add_var("bread", bounds=(0, so.inf))
-   milk = model.add_var("milk", bounds=(0, so.inf))
-   protein = model.add_constraint("protein", 4 * bread + 8 * milk >= 20)
-   calories = model.add_constraint("calories", 100 * bread + 150 * milk >= 400)
-   model.set_objective(so.ObjectiveSense.Minimize, 2 * bread + 3 * milk)
+   model.bread = so.Var(bounds=(0, so.inf))
+   model.milk = so.Var(bounds=(0, so.inf))
+   model.protein = 4 * model.bread + 8 * model.milk >= 20
+   model.calories = 100 * model.bread + 150 * model.milk >= 400
+   model.set_objective(so.ObjectiveSense.Minimize, 2 * model.bread + 3 * model.milk)
+
+   bread, milk, calories = model.bread, model.milk, model.calories
 
 Choosing a backend
 ------------------
@@ -110,7 +112,7 @@ There are three ways to read values:
    2.0
    [1.0, 2.0]
 
-Pass ``values`` a dict, such as what ``add_vars`` returns, and you get a
+Pass ``values`` a dict, such as a group like ``model.ship``, and you get a
 dict with the same keys back. ``result.variable_values`` holds every
 value as a dict from ``Variable`` to number, but builds a new dict each
 time you access it, so prefer the methods above for single lookups.

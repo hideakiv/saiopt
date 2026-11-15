@@ -196,6 +196,45 @@ LinearExpression linear_of(nb::handle expr, const char* what) {
     return std::move(*l);
 }
 
+[[noreturn]] void throw_attribute_error(const std::string& message) {
+    PyErr_SetString(PyExc_AttributeError, message.c_str());
+    throw nb::python_error();
+}
+
+template <typename F>
+bool succeeds(F&& lookup) {
+    try {
+        lookup();
+        return true;
+    } catch (const std::runtime_error&) {
+        return false;
+    }
+}
+
+// Everything named `name` in `self`'s own block, by kind, for attribute
+// access (see saiopt/_attributes.py): each kind's description and the
+// value `self.<name>` would give. A piecewise function also owns a child
+// block and a constraint of the same name; those aren't listed again.
+template <typename Self>
+std::vector<std::pair<const char*, nb::object>> declared_items(Self& self, const std::string& name) {
+    auto& b = target(self);
+    nb::handle obj = nb::find(&self);
+    std::vector<std::pair<const char*, nb::object>> found;
+    if (auto f = b.piecewise(name)) {
+        found.emplace_back("piecewise function", nb::cast(PyPiecewise{f->value, nb::cast(child_of(self, name))}));
+        return found;
+    }
+    if (auto v = b.var(name)) found.emplace_back("variable", nb::cast(*v));
+    if (succeeds([&] { b.vars(name); })) found.emplace_back("group of variables", obj.attr("vars")(name));
+    if (auto c = b.constraint(name)) found.emplace_back("constraint", nb::cast(*c));
+    if (succeeds([&] { b.constraints(name); })) {
+        found.emplace_back("group of constraints", obj.attr("constraints")(name));
+    }
+    if (b.block(name)) found.emplace_back("child block", nb::cast(child_of(self, name)));
+    if (succeeds([&] { b.blocks(name); })) found.emplace_back("group of child blocks", obj.attr("blocks")(name));
+    return found;
+}
+
 // The methods Model and Block share. `Self` is Model (used directly) or
 // PyBlock (resolved through its path on every call; see PyBlock).
 template <typename Self>
@@ -246,6 +285,49 @@ void bind_block_api(nb::class_<Self>& cls) {
             "name"_a, "keys"_a, "rule"_a,
             "Add one constraint per key, `rule(key)`, each named `name[key]`, returning a dict from key to "
             "ConstraintRef.")
+        .def(
+            "__getattr__",
+            [](Self& self, const std::string& name) -> nb::object {
+                // Python asks for these (copy, pickle, ...) and expects an
+                // AttributeError back; none can be a declared name.
+                std::string type = nb::cast<std::string>(nb::find(&self).type().attr("__name__"));
+                if (name.empty() || name[0] == '_') {
+                    throw_attribute_error("'" + type + "' object has no attribute '" + name + "'");
+                }
+                auto found = declared_items(self, name);
+                if (found.size() == 1) return std::move(found.front().second);
+                if (found.empty()) {
+                    throw_attribute_error("'" + type + "' object has no attribute '" + name +
+                                          "', and nothing named '" + name + "' is declared in it");
+                }
+                std::string kinds;
+                for (const auto& [kind, value] : found) kinds += (kinds.empty() ? "" : ", ") + std::string(kind);
+                throw_attribute_error("'" + name + "' names more than one thing in this block (" + kinds +
+                                      "); use var(), vars(), constraint(), constraints(), block() or blocks()");
+            },
+            "name"_a)
+        .def(
+            "__setattr__",
+            [](Self& self, const std::string& name, nb::object value) {
+                nb::module_::import_("saiopt._attributes").attr("set_attribute")(nb::find(&self), name, value);
+            },
+            "name"_a, "value"_a)
+        .def(
+            "_declared_kinds",
+            [](Self& self, const std::string& name) {
+                std::vector<std::string> kinds;
+                for (const auto& [kind, value] : declared_items(self, name)) kinds.emplace_back(kind);
+                return kinds;
+            },
+            "name"_a, "What `name` is already declared as in this block, for saiopt._attributes.")
+        .def(
+            "piecewise",
+            [](Self& self, const std::string& name) -> std::optional<PyPiecewise> {
+                auto f = target(self).piecewise(name);
+                if (!f) return std::nullopt;
+                return PyPiecewise{f->value, nb::cast(child_of(self, name))};
+            },
+            "name"_a, "The piecewise function added by add_piecewise(name, ...), or None.")
         .def(
             "add_sos2",
             [](Self& self, std::string name, std::vector<Variable> vars) {

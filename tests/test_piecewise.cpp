@@ -1,5 +1,6 @@
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -205,4 +206,20 @@ TEST_CASE("an SOS2 set may only use variables from its own block's subtree", "[s
     model.add_block("child", std::move(child));
     SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, LinearExpression{});
     REQUIRE_THROWS_WITH(create_solver(model, "scip"), ContainsSubstring("SOS2 sets"));
+}
+
+TEST_CASE("a piecewise function can be looked up by name, also after serialization", "[piecewise][serialize]") {
+    Block region;
+    SAIOPT_VAR(region, x, .bounds = {1.0, kInfinity});
+    SAIOPT_PIECEWISE(region, f, x, kPoints, kValues);
+    REQUIRE_FALSE(region.piecewise("x").has_value());
+    REQUIRE(region.piecewise("f").has_value());
+    REQUIRE(region.piecewise("f")->block == f.block);
+
+    Model model(Block::deserialize(region.serialize()), ObjectiveSense::Minimize);
+    std::optional<Piecewise> again = model.piecewise("f");
+    REQUIRE(again.has_value());
+    REQUIRE(model.block("f") == &model.block(again->block));
+    SAIOPT_OBJECTIVE(model, ObjectiveSense::Minimize, again->value);
+    REQUIRE(create_solver(model, "highs")->solve().objective_value == Approx(1.0));
 }

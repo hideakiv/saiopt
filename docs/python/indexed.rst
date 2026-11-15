@@ -2,9 +2,9 @@ Indexed variables and constraints
 =================================
 
 Real models have families of variables, such as "how much to ship along
-each route", rather than a handful of named ones. ``add_vars`` and
-``add_constraints`` declare a whole family in one call, one item per key
-of an index.
+each route", rather than a handful of named ones. ``so.Vars`` and
+``so.Constraints`` declare a whole family at once, one item per key of
+an index.
 
 This page builds a transportation problem: ship goods from two
 warehouses to three customers at minimum cost, without exceeding any
@@ -37,14 +37,15 @@ tuples; ``itertools.product`` builds every combination:
 
    model = so.Model()
    routes = list(itertools.product(warehouses, customers))
-   ship = model.add_vars("ship", routes, bounds=(0, so.inf))
+   model.ship = so.Vars(routes, bounds=(0, so.inf))
 
-``add_vars`` returns a dict from key to variable, in the order of the
-index. Index it with the key, and with a tuple key you can leave out the
-parentheses:
+Reading ``model.ship`` gives a dict from key to variable, in the order of
+the index. Index it with the key, and with a tuple key you can leave out
+the parentheses:
 
 .. code-block:: python
 
+   ship = model.ship
    first = ship["W1", "C1"]
 
 Each variable is named ``name[key]``, here ``ship[(W1, C1)]``, so it can
@@ -62,26 +63,24 @@ value. For example, to cap each route at the warehouse's supply:
 
 .. code-block:: python
 
-   capped = model.add_vars("capped", routes, bounds=lambda route: (0, supply[route[0]]))
+   model.capped = so.Vars(routes, bounds=lambda route: (0, supply[route[0]]))
 
 Step 3: one constraint per warehouse and per customer
 -----------------------------------------------------
 
-``add_constraints(name, keys, rule)`` calls ``rule(key)`` for every key
-and adds the constraint it returns, named ``name[key]``:
+``so.Constraints(keys, rule)`` calls ``rule(key)`` for every key and adds
+the constraint it returns, named ``name[key]``:
 
 .. code-block:: python
 
-   supply_limit = model.add_constraints(
-       "supply_limit", warehouses,
-       lambda w: so.quicksum(ship[w, c] for c in customers) <= supply[w],
+   model.supply_limit = so.Constraints(
+       warehouses, lambda w: so.quicksum(ship[w, c] for c in customers) <= supply[w]
    )
-   demand_min = model.add_constraints(
-       "demand_min", customers,
-       lambda c: so.quicksum(ship[w, c] for w in warehouses) >= demand[c],
+   model.demand_min = so.Constraints(
+       customers, lambda c: so.quicksum(ship[w, c] for w in warehouses) >= demand[c]
    )
 
-Like ``add_vars``, it returns a dict from key to constraint.
+Reading ``model.supply_limit`` gives a dict from key to constraint.
 
 Step 4: objective and solve
 ---------------------------
@@ -101,7 +100,7 @@ Step 4: objective and solve
    minimum cost: 165.0
 
 ``result.values(group)`` reads a whole group at once. Pass it the dict
-``add_vars`` returned and you get back a dict with the same keys:
+``model.ship`` gives and you get back a dict with the same keys:
 
 .. code-block:: python
 
@@ -130,26 +129,27 @@ constraint families from that one list:
    arcs = [(w, c) for w, cs in reachable.items() for c in cs]
 
    sparse = so.Model()
-   flow = sparse.add_vars("flow", arcs, bounds=(0, so.inf))
-   sparse.add_constraints(
-       "demand_min", customers,
-       lambda c: so.quicksum(flow[w, c2] for w, c2 in arcs if c2 == c) >= demand[c],
+   sparse.flow = so.Vars(arcs, bounds=(0, so.inf))
+   sparse.demand_min = so.Constraints(
+       customers, lambda c: so.quicksum(sparse.flow[w, c2] for w, c2 in arcs if c2 == c) >= demand[c]
    )
 
 Looking groups back up
 ----------------------
 
-You don't have to keep the dicts around. A model remembers every group
-by the name you declared it under:
+Reading an attribute such as ``model.ship`` looks the group up by its
+name. The same lookups are also methods, which take the name as a
+string. That's how you reach a single item, whose full name isn't an
+identifier, or a group whose name you only have as a string:
 
 .. code-block:: python
 
-   ship_again = model.vars("ship")              # the same dict, key -> Variable
+   ship_again = model.vars("ship")              # the same dict as model.ship
    one = model.var("ship[(W2, C3)]")            # a single variable, by its full name
    limits = model.constraints("supply_limit")   # key -> ConstraintRef
    w1_limit = model.constraint("supply_limit[W1]")
 
-   print(one.is_same(ship["W2", "C3"]))
+   print(one.is_same(model.ship["W2", "C3"]))
 
 .. code-block:: text
 
@@ -157,8 +157,8 @@ by the name you declared it under:
 
 ``var`` and ``constraint`` return ``None`` when nothing has that name.
 ``vars`` and ``constraints`` raise ``RuntimeError`` for a group name
-that was never declared. Declaring a second group under a name that is
-already taken also raises ``RuntimeError``.
+that was never declared. Reading an attribute that names nothing raises
+``AttributeError``, as for any Python object.
 
 This matters most once a model is split into blocks, where the code that
 created a variable may be long gone by the time you need it. That's the

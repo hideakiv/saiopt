@@ -7,13 +7,18 @@ then solve it with a registered backend ("highs" or "scip")::
     import saiopt as so
 
     model = so.Model()
-    bread = model.add_var("bread", bounds=(0, so.inf))
-    milk = model.add_var("milk", bounds=(0, so.inf))
-    model.add_constraint("protein", 4 * bread + 8 * milk >= 20)
-    model.set_objective(so.ObjectiveSense.Minimize, 2 * bread + 3 * milk)
+    model.bread = so.Var(bounds=(0, so.inf))
+    model.milk = so.Var(bounds=(0, so.inf))
+    model.protein = 4 * model.bread + 8 * model.milk >= 20
+    model.set_objective(so.ObjectiveSense.Minimize, 2 * model.bread + 3 * model.milk)
 
     result = so.create_solver(model, "highs").solve()
-    print(result.status, result.objective_value, result[bread])
+    print(result.status, result.objective_value, result[model.bread])
+
+Assigning to an attribute declares something under that name (see
+so.Var, so.Vars, so.Constraints, so.Blocks, so.Scaled,
+so.PiecewiseLinear); the add_* methods do the same for names that
+aren't Python identifiers.
 """
 
 from ._saiopt import (
@@ -38,7 +43,15 @@ from ._saiopt import (
     quicksum,
 )
 
+from ._attributes import Blocks, Constraints, PiecewiseLinear, Scaled, Var, Vars
+
 __all__ = [
+    "Blocks",
+    "Constraints",
+    "PiecewiseLinear",
+    "Scaled",
+    "Var",
+    "Vars",
     "Block",
     "Constraint",
     "ConstraintRef",

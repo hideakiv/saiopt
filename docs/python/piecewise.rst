@@ -3,7 +3,7 @@ Piecewise linear functions
 
 Some costs and yields aren't linear but are made of straight segments: a
 price that drops after the first 100 units, a tariff with tiers, a fee
-charged only if anything is shipped at all. ``add_piecewise`` models
+charged only if anything is shipped at all. ``so.PiecewiseLinear`` models
 such a function from its breakpoints and gives back f(x) as a linear
 expression, which you use anywhere an expression goes.
 
@@ -25,30 +25,31 @@ B charges a flat 4 per unit:
    import saiopt as so
 
    model = so.Model()
-   from_a = model.add_var("from_a", bounds=(0, so.inf))
-   from_b = model.add_var("from_b", bounds=(0, so.inf))
-   model.add_constraint("demand", from_a + from_b == 180)
+   model.from_a = so.Var(bounds=(0, so.inf))
+   model.from_b = so.Var(bounds=(0, so.inf))
+   model.demand = model.from_a + model.from_b == 180
 
 Step 2: the piecewise cost
 --------------------------
 
-``add_piecewise(name, x, points, values)`` takes the breakpoints as two
+``so.PiecewiseLinear(x, points, values)`` takes the breakpoints as two
 lists: the x of each point and the function's value there. Between
 breakpoints the function is a straight line:
 
 .. code-block:: python
 
-   cost_a = model.add_piecewise("cost_a", from_a, [0, 100, 250], [0, 500, 800])
-   model.set_objective(so.ObjectiveSense.Minimize, cost_a.value + 4 * from_b)
+   model.cost_a = so.PiecewiseLinear(model.from_a, [0, 100, 250], [0, 500, 800])
+   model.set_objective(so.ObjectiveSense.Minimize, model.cost_a.value + 4 * model.from_b)
 
-``cost_a.value`` is the cost of ``from_a`` units from supplier A.
+Reading ``model.cost_a`` gives a ``Piecewise``, and its ``value`` is the
+cost of ``from_a`` units from supplier A as a linear expression.
 The model now has binary variables, so it's a MILP, which any backend
 solves:
 
 .. code-block:: python
 
    result = so.create_solver(model, "highs").solve()
-   print(f"cost {result.objective_value:g}: {result[from_a]:g} from A")
+   print(f"cost {result.objective_value:g}: {result[model.from_a]:g} from A")
 
 .. code-block:: text
 
@@ -64,7 +65,10 @@ per point:
 
 .. code-block:: python
 
-   tiers = model.add_piecewise("tiers", from_b, [0, 100, 200], lambda q: 4 * q)
+   model.tiers = so.PiecewiseLinear(model.from_b, [0, 100, 200], lambda q: 4 * q)
+
+``model.add_piecewise(name, x, points, values)`` does the same with the
+name as a string, and returns the ``Piecewise``.
 
 Using an SOS2 set instead
 -------------------------
@@ -77,15 +81,15 @@ an SOS2 set. This needs a backend that supports SOS2 sets, such as
 .. code-block:: python
 
    sos_model = so.Model()
-   a = sos_model.add_var("from_a", bounds=(0, so.inf))
-   b = sos_model.add_var("from_b", bounds=(0, so.inf))
-   sos_model.add_constraint("demand", a + b == 180)
-   sos_cost = sos_model.add_piecewise("cost_a", a, [0, 100, 250], [0, 500, 800],
-                                      method=so.PiecewiseMethod.Sos2)
-   sos_model.set_objective(so.ObjectiveSense.Minimize, sos_cost.value + 4 * b)
+   sos_model.from_a = so.Var(bounds=(0, so.inf))
+   sos_model.from_b = so.Var(bounds=(0, so.inf))
+   sos_model.demand = sos_model.from_a + sos_model.from_b == 180
+   sos_model.cost_a = so.PiecewiseLinear(sos_model.from_a, [0, 100, 250], [0, 500, 800],
+                                         method=so.PiecewiseMethod.Sos2)
+   sos_model.set_objective(so.ObjectiveSense.Minimize, sos_model.cost_a.value + 4 * sos_model.from_b)
 
    result = so.create_solver(sos_model, "scip").solve()
-   print(f"cost {result.objective_value:g}: {result[a]:g} from A")
+   print(f"cost {result.objective_value:g}: {result[sos_model.from_a]:g} from A")
 
 .. code-block:: text
 
@@ -97,11 +101,11 @@ model and the solver.
 How it works
 ------------
 
-``add_piecewise`` adds a child block named ``name`` that holds the
-auxiliary variables. It also adds a constraint, also named ``name``, to
-the block you called it on, tying those variables to ``x``.
-``cost_a.block`` is that child block, and the auxiliary variables depend
-on the method:
+A piecewise function named ``cost_a`` adds a child block, also named
+``cost_a``, that holds the auxiliary variables. It also adds a constraint
+of the same name to the block it was declared in, tying those variables
+to ``x``. ``model.cost_a.block`` is that child block, and the auxiliary
+variables depend on the method:
 
 ``PiecewiseMethod.Incremental`` (the default)
    A fraction ``delta[j]`` between 0 and 1 for how much of segment ``j``
@@ -119,8 +123,8 @@ on the method:
 
 .. code-block:: python
 
-   print(len(cost_a.block.vars("delta")), len(cost_a.block.vars("full")))
-   print(len(sos_cost.block.vars("lambda")))
+   print(len(model.cost_a.block.vars("delta")), len(model.cost_a.block.vars("full")))
+   print(len(sos_model.cost_a.block.vars("lambda")))
 
 .. code-block:: text
 
@@ -131,14 +135,13 @@ Either way, ``x`` can't go outside the first and last breakpoint. Here,
 ``from_a`` can't exceed 250. To leave ``x`` unrestricted, add
 breakpoints far enough out that they never bind.
 
-``add_piecewise`` checks its input before adding anything, and raises
+saiopt checks the breakpoints before adding anything, and raises
 ``RuntimeError`` for any of these:
 
 * ``points`` and ``values`` of different lengths, or fewer than two
   points;
 * a value that isn't finite;
-* ``points`` that decrease anywhere;
-* a name already used by a child block or constraint.
+* ``points`` that decrease anywhere.
 
 Jumps
 -----
@@ -151,9 +154,9 @@ is shipped looks like this:
 .. code-block:: python
 
    model = so.Model()
-   shipped = model.add_var("shipped", bounds=(10, so.inf))
-   fee = model.add_piecewise("fee", shipped, [0, 0, 300], [0, 50, 350])
-   model.set_objective(so.ObjectiveSense.Minimize, fee.value)
+   model.shipped = so.Var(bounds=(10, so.inf))
+   model.fee = so.PiecewiseLinear(model.shipped, [0, 0, 300], [0, 50, 350])
+   model.set_objective(so.ObjectiveSense.Minimize, model.fee.value)
    print(so.create_solver(model, "highs").solve().objective_value)
 
 .. code-block:: text
@@ -164,9 +167,9 @@ Using f(x) in constraints
 -------------------------
 
 ``value`` is an ordinary linear expression, so you can also constrain
-another variable to it. ``y == f.value`` makes ``y`` equal to the
-function. ``y <= f.value`` makes it at most the function, as in an
-upper bound on a yield.
+another variable to it. ``model.y == model.f.value`` makes ``y`` equal
+to the function. ``model.y <= model.f.value`` makes it at most the
+function, as in an upper bound on a yield.
 
 SOS2 sets directly
 ------------------
@@ -174,12 +177,14 @@ SOS2 sets directly
 ``add_sos2(name, vars)`` adds an SOS2 set over any variables of the
 block or its descendants: at most two of them may be nonzero, and those
 two must be neighbours in the order given. Like
-``PiecewiseMethod.Sos2``, it needs the ``"scip"`` backend.
+``PiecewiseMethod.Sos2``, it needs the ``"scip"`` backend. An SOS2 set
+is never read back, so there's no attribute form for it.
 
 .. code-block:: python
 
    model = so.Model()
-   v = model.add_vars("v", range(3), bounds=(0, 1))
+   model.v = so.Vars(range(3), bounds=(0, 1))
+   v = model.v
    model.add_sos2("pick", [v[0], v[1], v[2]])
    model.set_objective(so.ObjectiveSense.Maximize, 2 * v[0] + 3 * v[1] + v[2])
    print(so.create_solver(model, "scip").solve().objective_value)

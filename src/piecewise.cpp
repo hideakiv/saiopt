@@ -94,8 +94,16 @@ Piecewise Block::add_piecewise(std::string name, LinearExpression x, std::vector
     }
 
     BlockRef ref = add_block(name, std::move(aux));
-    add_constraint(std::move(name), std::move(x) == std::move(x_of));
-    return Piecewise{std::move(value), ref};
+    add_constraint(name, std::move(x) == std::move(x_of));
+    Piecewise result{std::move(value), ref};
+    piecewise_.emplace(std::move(name), result);
+    return result;
+}
+
+std::optional<Piecewise> Block::piecewise(const std::string& name) const {
+    auto it = piecewise_.find(name);
+    if (it == piecewise_.end()) return std::nullopt;
+    return it->second;
 }
 
 }  // namespace saiopt

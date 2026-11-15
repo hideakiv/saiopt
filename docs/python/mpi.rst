@@ -32,7 +32,7 @@ The module has three functions:
 
 ``recv_block(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, comm=None)``
    Waits for a block from ``source`` and returns it as a new standalone
-   ``Block``, ready to attach with ``add_block``.
+   ``Block``, ready to attach to a parent.
 
 ``comm`` defaults to ``MPI.COMM_WORLD``.
 
@@ -62,8 +62,8 @@ Step 1: every rank builds its block
    cost_per_unit = 5.0 - 0.5 * rank
 
    region = so.Block()
-   produce = region.add_var("produce", bounds=(0, capacity))
-   region.set_objective(cost_per_unit * produce)
+   region.produce = so.Var(bounds=(0, capacity))
+   region.set_objective(cost_per_unit * region.produce)
 
 Nothing here needs to coordinate with other ranks.
 
@@ -79,8 +79,9 @@ Step 2: gather the blocks on rank 0
 Step 3: attach and solve on rank 0
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-A received block is a new object, so handles like ``produce`` from
-another rank don't apply to it. Look its variables up by name instead:
+A received block is a new object, so variables from another rank's
+block don't apply to it. Read them through the attached block instead,
+which looks them up by name:
 
 .. check: skip
 
@@ -88,9 +89,9 @@ another rank don't apply to it. Look its variables up by name instead:
 
    if rank == 0:
        model = so.Model()
-       attached = model.add_blocks("region", range(size), lambda i: regions[i])
-       produced = {i: block.var("produce") for i, block in attached.items()}
-       model.add_constraint("meet_demand", so.quicksum(produced.values()) >= 25.0)
+       model.region = so.Blocks(range(size), lambda i: regions[i])
+       produced = {i: block.produce for i, block in model.region.items()}
+       model.meet_demand = so.quicksum(produced.values()) >= 25.0
        model.set_objective(so.ObjectiveSense.Minimize, 0)
 
        result = so.create_solver(model, "highs").solve()

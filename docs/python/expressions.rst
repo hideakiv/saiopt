@@ -1,14 +1,13 @@
 Expressions and constraints
 ===========================
 
-This page covers what goes inside ``add_constraint`` and
-``set_objective``: linear expressions, constraints, and quadratic
-objectives.
+This page covers what goes into constraints and objectives: linear
+expressions, constraints, and quadratic objectives.
 
 Variables
 ---------
 
-``add_var`` takes a name and, optionally, a ``kind`` and ``bounds``, both
+``so.Var`` optionally takes a ``kind`` and ``bounds``, both
 keyword-only:
 
 .. code-block:: python
@@ -16,17 +15,24 @@ keyword-only:
    import saiopt as so
 
    model = so.Model()
-   x = model.add_var("x")                                   # continuous, unbounded
-   y = model.add_var("y", bounds=(0, 10))                   # continuous, 0 <= y <= 10
-   n = model.add_var("n", kind=so.VarKind.Integer, bounds=(0, 5))
-   flag = model.add_var("flag", kind=so.VarKind.Binary)     # always [0, 1]
+   model.x = so.Var()                                       # continuous, unbounded
+   model.y = so.Var(bounds=(0, 10))                         # continuous, 0 <= y <= 10
+   model.n = so.Var(kind=so.VarKind.Integer, bounds=(0, 5))
+   model.flag = so.Var(kind=so.VarKind.Binary)              # always [0, 1]
 
 ``bounds`` is a ``(lower, upper)`` pair. Use ``so.inf`` or ``-so.inf``
 for a side with no bound; ``math.inf`` works too. A ``Binary`` variable
 always has bounds ``[0, 1]``, whatever you pass.
 
-Adding a second variable with a name that already exists in the same
-model raises ``RuntimeError``.
+Declaring a second item under a name that already exists in the same
+model raises ``AttributeError``.
+
+Reading ``model.x`` gives the variable itself, so when an expression uses
+the same variables many times you can keep them in local names:
+
+.. code-block:: python
+
+   x, y, n = model.x, model.y, model.n
 
 Linear expressions
 ------------------
@@ -54,10 +60,10 @@ slow on large models. ``quicksum`` adds in place:
 
 .. code-block:: python
 
-   items = [model.add_var(f"item{i}", bounds=(0, 1)) for i in range(100)]
+   model.item = so.Vars(range(100), bounds=(0, 1))   # 100 variables; see the next page
    weights = [i % 7 + 1 for i in range(100)]
 
-   total_weight = so.quicksum(w * v for w, v in zip(weights, items))
+   total_weight = so.quicksum(w * model.item[i] for i, w in enumerate(weights))
 
 ``+=`` on a ``LinearExpression`` also adds in place, which is handy when
 you build an expression up in a loop:
@@ -65,8 +71,8 @@ you build an expression up in a loop:
 .. code-block:: python
 
    total = so.LinearExpression()
-   for w, v in zip(weights, items):
-       total += w * v
+   for i, w in enumerate(weights):
+       total += w * model.item[i]
 
 Constraints
 -----------
@@ -77,9 +83,9 @@ on either side:
 
 .. code-block:: python
 
-   model.add_constraint("budget", total_weight <= 120)
-   model.add_constraint("balance", x + y == 2 * n)
-   model.add_constraint("floor", 1 <= y)
+   model.budget = total_weight <= 120
+   model.balance = x + y == 2 * n
+   model.floor = 1 <= y
 
 Two-sided ranges
 ~~~~~~~~~~~~~~~~
@@ -89,7 +95,7 @@ For a constraint with both a lower and an upper bound, construct
 
 .. code-block:: python
 
-   model.add_constraint("band", so.Constraint(x + y, 2, 8))   # 2 <= x + y <= 8
+   model.band = so.Constraint(x + y, 2, 8)   # 2 <= x + y <= 8
 
 Don't chain comparisons. Python runs ``2 <= x + y <= 8`` as
 ``(2 <= x + y) and (x + y <= 8)``, which would silently drop one of the
@@ -120,13 +126,13 @@ not constraints: ``x * y <= 3`` raises ``TypeError``.
 .. code-block:: python
 
    qp = so.Model()
-   a = qp.add_var("a", bounds=(0, 10))
-   b = qp.add_var("b", bounds=(0, 10))
-   qp.add_constraint("total", a + b >= 4)
-   qp.set_objective(so.ObjectiveSense.Minimize, (a - 1) ** 2 + (b - 2) ** 2 + a * b)
+   qp.a = so.Var(bounds=(0, 10))
+   qp.b = so.Var(bounds=(0, 10))
+   qp.total = qp.a + qp.b >= 4
+   qp.set_objective(so.ObjectiveSense.Minimize, (qp.a - 1) ** 2 + (qp.b - 2) ** 2 + qp.a * qp.b)
 
    result = so.create_solver(qp, "highs").solve()
-   print(round(result.objective_value, 4), round(result[a], 4), round(result[b], 4))
+   print(round(result.objective_value, 4), round(result[qp.a], 4), round(result[qp.b], 4))
 
 .. code-block:: text
 

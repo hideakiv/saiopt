@@ -19,10 +19,12 @@ Step 1: build and solve once
    import saiopt as so
 
    model = so.Model()
-   x = model.add_var("x", bounds=(0, 6))
-   y = model.add_var("y", bounds=(0, so.inf))
-   demand = model.add_constraint("demand", x + y >= 10)
-   model.set_objective(so.ObjectiveSense.Minimize, 2 * x + 3 * y)
+   model.x = so.Var(bounds=(0, 6))
+   model.y = so.Var(bounds=(0, so.inf))
+   model.demand = model.x + model.y >= 10
+   model.set_objective(so.ObjectiveSense.Minimize, 2 * model.x + 3 * model.y)
+
+   x, y, demand = model.x, model.y, model.demand
 
    solver = so.create_solver(model, "highs", {"output_flag": False})
    r = solver.solve()

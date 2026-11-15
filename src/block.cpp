@@ -119,6 +119,18 @@ bool Block::find_var_path(const Block& block, Variable var, std::vector<std::uin
     return false;
 }
 
+namespace detail {
+
+// Block::deserialize's way into the private state that the public API
+// can't rebuild.
+struct BlockReader {
+    static void restore_piecewise(Block& block, std::string name, LinearExpression value) {
+        block.restore_piecewise(std::move(name), std::move(value));
+    }
+};
+
+}  // namespace detail
+
 namespace {
 
 void append_u8(std::vector<std::byte>& out, std::uint8_t v) { out.push_back(static_cast<std::byte>(v)); }
@@ -299,8 +311,20 @@ RebuiltBlock read_block(Reader& reader) {
         block.add_sos2(std::move(name), std::move(members));
     }
 
+    std::uint64_t num_piecewise = reader.read_u64();
+    std::vector<std::pair<std::string, LinearExpression>> piecewise;
+    for (std::uint64_t i = 0; i < num_piecewise; ++i) {
+        std::string name = reader.read_string();
+        piecewise.emplace_back(std::move(name), read_expression(reader, own_vars, children));
+    }
+
     for (std::size_t i = 0; i < children.size(); ++i) {
         block.add_block_scaled(child_names[i], std::move(children[i].block), child_multipliers[i]);
+    }
+
+    for (auto& [name, value] : piecewise) {
+        if (!block.block(name)) throw std::runtime_error("Block::deserialize: truncated or malformed buffer");
+        detail::BlockReader::restore_piecewise(block, std::move(name), std::move(value));
     }
 
     return RebuiltBlock{std::move(block), std::move(own_vars), std::move(children)};
@@ -383,6 +407,12 @@ void Block::write_block(std::vector<std::byte>& out, const Block& block) {
         append_string(out, sos2_names[i]);
         append_u64(out, block.sos2_[i].vars.size());
         for (Variable var : block.sos2_[i].vars) write_var_ref(out, block, var);
+    }
+
+    append_u64(out, block.piecewise_.size());
+    for (const auto& [name, f] : block.piecewise_) {
+        append_string(out, name);
+        write_expression(out, block, f.value);
     }
 }
 

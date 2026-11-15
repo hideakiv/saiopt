@@ -23,6 +23,10 @@ namespace saiopt {
 
 class ModelFlattener;
 
+namespace detail {
+struct BlockReader;
+}  // namespace detail
+
 // A lightweight, copyable handle to a child block added via
 // Block::add_block / Block::add_block_scaled, used to reach it again via
 // Block::block.
@@ -388,6 +392,10 @@ public:
     // descendants).
     std::optional<ConstraintRef> constraint(const std::string& name) const;
 
+    // Look up a piecewise function added with add_piecewise under `name`
+    // in *this* block: the same Piecewise add_piecewise returned.
+    std::optional<Piecewise> piecewise(const std::string& name) const;
+
     // Look up a whole indexed group of constraints added by
     // add_constraints (or SAIOPT_CONSTRAINTS) in *this* block, replaying
     // the same "{name}[{key}]" naming convention add_constraints used to
@@ -462,6 +470,7 @@ public:
 private:
     friend class Model;
     friend class ModelFlattener;
+    friend struct detail::BlockReader;
 
     struct VarData {
         VarKind kind;
@@ -522,6 +531,13 @@ private:
     // unmodified, if `var` isn't found in `block`'s own subtree.
     static bool find_var_path(const Block& block, Variable var, std::vector<std::uint64_t>& path);
 
+    // Re-registers a piecewise function read back by deserialize(), once
+    // its child block (named `name`) is attached.
+    void restore_piecewise(std::string name, LinearExpression value) {
+        BlockRef ref(child_names_.at(name));
+        piecewise_.emplace(std::move(name), Piecewise{std::move(value), ref});
+    }
+
     // Appends `block`'s wire encoding (see serialize()) onto `out`.
     static void write_block(std::vector<std::byte>& out, const Block& block);
     static void write_var_ref(std::vector<std::byte>& out, const Block& block, Variable var);
@@ -540,6 +556,7 @@ private:
     std::unordered_map<std::string, ConstraintRef> constraint_names_;
     std::unordered_map<std::string, std::size_t> child_names_;
     std::unordered_map<std::string, std::size_t> sos2_names_;
+    std::unordered_map<std::string, Piecewise> piecewise_;
     std::unordered_map<std::string, IndexedVarGroup> indexed_var_groups_;
     std::unordered_map<std::string, IndexedConstraintGroup> indexed_constraint_groups_;
     std::unordered_map<std::string, IndexedBlockGroup> indexed_block_groups_;

@@ -167,6 +167,7 @@ public:
     using Block::blocks;
     using Block::constraint;
     using Block::constraints;
+    using Block::piecewise;
     using Block::var;
     using Block::vars;
 

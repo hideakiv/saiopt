@@ -35,14 +35,14 @@ cmake --build build -j
 import saiopt as so
 
 model = so.Model()
-bread = model.add_var("bread", bounds=(0, so.inf))
-milk = model.add_var("milk", bounds=(0, so.inf))
-model.add_constraint("protein", 4 * bread + 8 * milk >= 20)
-model.add_constraint("calories", 100 * bread + 150 * milk >= 400)
-model.set_objective(so.ObjectiveSense.Minimize, 2 * bread + 3 * milk)
+model.bread = so.Var(bounds=(0, so.inf))
+model.milk = so.Var(bounds=(0, so.inf))
+model.protein = 4 * model.bread + 8 * model.milk >= 20
+model.calories = 100 * model.bread + 150 * model.milk >= 400
+model.set_objective(so.ObjectiveSense.Minimize, 2 * model.bread + 3 * model.milk)
 
 result = so.create_solver(model, "highs").solve()
-print(result.status, result.objective_value, result[bread], result[milk])
+print(result.status, result.objective_value, result[model.bread], result[model.milk])
 ```
 
 The same model in C++:

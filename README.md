@@ -11,6 +11,18 @@ backend, registered as `"highs"`, built on [HiGHS](https://highs.dev/)
 `"scip"`, built on [SCIP](https://scipopt.org/) (linked via its C API)
 with [SoPlex](https://soplex.zib.de/) as its LP solver.
 
+## Documentation
+
+Step-by-step guides, with examples, for each language: `docs/python/`
+for the Python package and `docs/cpp/` for the C++ library. Build them
+with [Sphinx](https://www.sphinx-doc.org/):
+
+```sh
+pip install -r docs/requirements.txt
+sphinx-build -b html docs/python docs/python/_build/html
+sphinx-build -b html docs/cpp docs/cpp/_build/html
+```
+
 ## Building
 
 ```sh

@@ -136,7 +136,7 @@ backend-specific header is needed.
 The whole program
 -----------------
 
-.. cpp-scope: program
+.. check: program
 
 .. code-block:: cpp
 

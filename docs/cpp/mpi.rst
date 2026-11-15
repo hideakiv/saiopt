@@ -43,7 +43,7 @@ solves. The complete program is ``examples/mpi_parallel_build.cpp``.
 Step 1: every rank builds its block
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. cpp-scope: skip
+.. check: skip
 
 .. code-block:: cpp
 
@@ -67,7 +67,7 @@ Nothing here needs to coordinate with other ranks.
 Step 2: send every block to rank 0
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. cpp-scope: skip
+.. check: skip
 
 .. code-block:: cpp
 
@@ -90,7 +90,7 @@ A received block is a new object, with new internal ids, so ``Variable``
 handles from another rank don't apply to it. Look its variables up by
 name instead:
 
-.. cpp-scope: skip
+.. check: skip
 
 .. code-block:: cpp
 
@@ -113,6 +113,8 @@ name instead:
 
 Step 4: run it
 ~~~~~~~~~~~~~~
+
+.. check: run
 
 .. code-block:: console
 

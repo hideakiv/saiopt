@@ -27,7 +27,7 @@ Every macro that works on a ``Model`` works on a ``Block`` too. A
 block's objective has no direction of its own, so ``SAIOPT_OBJECTIVE``
 takes only the expression, and the model's direction applies to it.
 
-.. cpp-scope: file
+.. check: file
 
 .. code-block:: cpp
 

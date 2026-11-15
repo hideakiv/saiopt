@@ -201,6 +201,8 @@ and ``.mps``; SCIP also writes its other formats, such as ``.cip``.
 
    solver.write_model("diet.lp")
 
+.. check: contents diet.lp
+
 .. code-block:: text
 
    \ File written by HiGHS .lp file handler

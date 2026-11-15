@@ -1,0 +1,48 @@
+name: docs examples
+
+# Runs every example in the Python and C++ guides and checks that it prints
+# what the page says it prints. See docs/check_examples.py.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-examples-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # The MPI examples run 4 ranks, whatever the runner's core count.
+      OMPI_MCA_rmaps_base_oversubscribe: "1"
+      PRTE_MCA_rmaps_default_mapping_policy: ":oversubscribe"
+    steps:
+      - uses: actions/checkout@v5
+
+      - run: sudo apt-get update && sudo apt-get install -y libopenmpi-dev openmpi-bin
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # The C++ examples link against these shared libraries (the same
+      # layout a default local build ends up with); mpi_parallel_build is
+      # run by the MPI page.
+      - name: Build the C++ library
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSAIOPT_BUILD_TESTS=OFF -DBUILD_SHARED_LIBS=ON
+          cmake --build build -j "$(nproc)" --target saiopt saiopt_highs saiopt_scip mpi_parallel_build
+
+      - name: Install the Python package
+        run: pip install ".[mpi]"
+
+      - name: Check the examples
+        run: python docs/check_examples.py --build-dir build

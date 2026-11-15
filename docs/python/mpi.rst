@@ -46,6 +46,8 @@ solves.
 Step 1: every rank builds its block
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+.. check: skip
+
 .. code-block:: python
 
    from mpi4py import MPI
@@ -68,6 +70,8 @@ Nothing here needs to coordinate with other ranks.
 Step 2: gather the blocks on rank 0
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+.. check: skip
+
 .. code-block:: python
 
    regions = saiopt.mpi.gather_blocks(region)   # a list on rank 0, None elsewhere
@@ -77,6 +81,8 @@ Step 3: attach and solve on rank 0
 
 A received block is a new object, so handles like ``produce`` from
 another rank don't apply to it. Look its variables up by name instead:
+
+.. check: skip
 
 .. code-block:: python
 
@@ -97,6 +103,8 @@ Step 4: run it
 
 The full program is ``python/examples/mpi_parallel_build.py`` in the
 repository:
+
+.. check: run
 
 .. code-block:: console
 

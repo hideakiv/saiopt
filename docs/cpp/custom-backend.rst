@@ -32,7 +32,7 @@ To keep this page short, the backend below doesn't talk to a solver
 itself. It wraps the ``"highs"`` backend and counts how often
 ``solve()`` is called. Every other function forwards to HiGHS.
 
-.. cpp-scope: file
+.. check: file
 
 .. code-block:: cpp
 
@@ -83,7 +83,7 @@ Step 2: register it
 A ``SolverRegistration`` at namespace scope registers a factory when the
 program (or the shared library containing it) is loaded:
 
-.. cpp-scope: file
+.. check: file
 
 .. code-block:: cpp
 

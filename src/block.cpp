@@ -3,6 +3,10 @@
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <string>
+#include <vector>
+#include <utility>
+#include <optional>
 
 namespace saiopt {
 
@@ -127,6 +131,10 @@ struct BlockReader {
     static void restore_piecewise(Block& block, std::string name, LinearExpression value) {
         block.restore_piecewise(std::move(name), std::move(value));
     }
+    static void restore_group(Block& block, int kind, std::string name, const std::vector<std::uint64_t>& members,
+                              const std::optional<std::vector<std::pair<KeyValue, std::uint64_t>>>& keys) {
+        block.restore_group(kind, std::move(name), members, keys);
+    }
 };
 
 }  // namespace detail
@@ -151,6 +159,46 @@ void append_string(std::vector<std::byte>& out, const std::string& s) {
     append_u64(out, s.size());
     const auto* data = reinterpret_cast<const std::byte*>(s.data());
     out.insert(out.end(), data, data + s.size());
+}
+
+// A key as a tag byte -- 0 integer, 1 float, 2 string, 3 tuple, the
+// order of KeyValue's alternatives -- then its value; a tuple's value is
+// its length and then each item.
+void append_key(std::vector<std::byte>& out, const KeyValue& key) {
+    append_u8(out, static_cast<std::uint8_t>(key.value.index()));
+    if (const auto* i = std::get_if<std::int64_t>(&key.value)) {
+        append_u64(out, static_cast<std::uint64_t>(*i));
+    } else if (const auto* d = std::get_if<double>(&key.value)) {
+        append_f64(out, *d);
+    } else if (const auto* str = std::get_if<std::string>(&key.value)) {
+        append_string(out, *str);
+    } else {
+        const auto& items = std::get<KeyValue::Tuple>(key.value).items;
+        append_u64(out, items.size());
+        for (const KeyValue& item : items) append_key(out, item);
+    }
+}
+
+// Each group: its name, its members (as indices among the block's own
+// variables, constraints, or children, via `index_of`) in declaration
+// order, then a byte saying whether its keys follow, each with the index
+// of its member.
+template <typename Groups, typename IndexOf>
+void append_groups(std::vector<std::byte>& out, const Groups& groups, IndexOf index_of) {
+    append_u64(out, groups.size());
+    for (const auto& [name, group] : groups) {
+        append_string(out, name);
+        append_u64(out, group.ordered.size());
+        for (const auto& item : group.ordered) append_u64(out, index_of(item));
+        auto keys = group.keys();
+        append_u8(out, keys ? 1 : 0);
+        if (!keys) continue;
+        append_u64(out, keys->size());
+        for (const auto& [key, item] : *keys) {
+            append_key(out, key);
+            append_u64(out, index_of(item));
+        }
+    }
 }
 
 // Reads primitives out of a buffer produced by the append_* helpers above,
@@ -259,6 +307,27 @@ QuadraticExpression read_quadratic_expression(Reader& reader, const std::vector<
     return expr;
 }
 
+KeyValue read_key(Reader& reader, int depth = 0) {
+    // Deep enough for any real key; bounds the recursion on a bad buffer.
+    if (depth > 64) throw std::runtime_error("Block::deserialize: truncated or malformed buffer");
+    switch (reader.read_u8()) {
+        case 0:
+            return KeyValue{static_cast<std::int64_t>(reader.read_u64())};
+        case 1:
+            return KeyValue{reader.read_f64()};
+        case 2:
+            return KeyValue{reader.read_string()};
+        case 3: {
+            KeyValue::Tuple tuple;
+            std::uint64_t size = reader.read_u64();
+            for (std::uint64_t i = 0; i < size; ++i) tuple.items.push_back(read_key(reader, depth + 1));
+            return KeyValue{std::move(tuple)};
+        }
+        default:
+            throw std::runtime_error("Block::deserialize: truncated or malformed buffer");
+    }
+}
+
 RebuiltBlock read_block(Reader& reader) {
     Block block;
 
@@ -325,6 +394,27 @@ RebuiltBlock read_block(Reader& reader) {
     for (auto& [name, value] : piecewise) {
         if (!block.block(name)) throw std::runtime_error("Block::deserialize: truncated or malformed buffer");
         detail::BlockReader::restore_piecewise(block, std::move(name), std::move(value));
+    }
+
+    // Groups of variables, of constraints, and of child blocks.
+    for (int kind = 0; kind < 3; ++kind) {
+        std::uint64_t num_groups = reader.read_u64();
+        for (std::uint64_t g = 0; g < num_groups; ++g) {
+            std::string name = reader.read_string();
+            std::uint64_t num_members = reader.read_u64();
+            std::vector<std::uint64_t> members;
+            for (std::uint64_t i = 0; i < num_members; ++i) members.push_back(reader.read_u64());
+            std::optional<std::vector<std::pair<KeyValue, std::uint64_t>>> keys;
+            if (reader.read_u8() != 0) {
+                keys.emplace();
+                std::uint64_t num_keys = reader.read_u64();
+                for (std::uint64_t i = 0; i < num_keys; ++i) {
+                    KeyValue key = read_key(reader);
+                    keys->emplace_back(std::move(key), reader.read_u64());
+                }
+            }
+            detail::BlockReader::restore_group(block, kind, std::move(name), members, keys);
+        }
     }
 
     return RebuiltBlock{std::move(block), std::move(own_vars), std::move(children)};
@@ -413,6 +503,43 @@ void Block::write_block(std::vector<std::byte>& out, const Block& block) {
     for (const auto& [name, f] : block.piecewise_) {
         append_string(out, name);
         write_expression(out, block, f.value);
+    }
+
+    append_groups(out, block.indexed_var_groups_, [](Variable v) { return std::uint64_t{v.index()}; });
+    append_groups(out, block.indexed_constraint_groups_, [](ConstraintRef c) { return std::uint64_t{c.index()}; });
+    append_groups(out, block.indexed_block_groups_, [](BlockRef b) { return std::uint64_t{b.index_}; });
+}
+
+void Block::restore_group(int kind, std::string name, const std::vector<std::uint64_t>& members,
+                          const std::optional<std::vector<std::pair<KeyValue, std::uint64_t>>>& keys) {
+    auto restore = [&](auto& groups, std::size_t count, auto make) {
+        using V = decltype(make(std::uint64_t{}));
+        auto item = [&](std::uint64_t i) {
+            if (i >= count) throw std::runtime_error("Block::deserialize: truncated or malformed buffer");
+            return make(i);
+        };
+        IndexedGroup<V> group;
+        for (std::uint64_t i : members) group.ordered.push_back(item(i));
+        if (keys) {
+            KeyedItems<V> items;
+            for (const auto& [key, i] : *keys) items.emplace_back(key, item(i));
+            group.restored = std::move(items);
+        }
+        if (!groups.emplace(std::move(name), std::move(group)).second) {
+            throw std::runtime_error("Block::deserialize: truncated or malformed buffer");
+        }
+    };
+    switch (kind) {
+        case 0:
+            restore(indexed_var_groups_, vars_.size(), [&](std::uint64_t i) { return Variable(id_, i); });
+            break;
+        case 1:
+            restore(indexed_constraint_groups_, constraints_.size(),
+                    [&](std::uint64_t i) { return ConstraintRef(id_, i); });
+            break;
+        default:
+            restore(indexed_block_groups_, children_.size(), [](std::uint64_t i) { return BlockRef(i); });
+            break;
     }
 }
 

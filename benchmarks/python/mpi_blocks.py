@@ -54,10 +54,7 @@ for _ in range(REPS):
     if rank == 0:
         model = so.Model()
         model.rank = so.Blocks(range(len(chunks)), lambda r: chunks[r])
-        # By full name: a block received from another rank keeps its
-        # children's names, but not the "region" group they were declared in.
-        ranks = model.rank
-        used = [ranks[r].block(f"region[{k}]").used for r in ranks for k in range(r, K, size)]
+        used = [region.used for c in model.rank.values() for region in c.region.values()]
         model.link = so.quicksum(used) <= 1e9
         model.set_objective(so.ObjectiveSense.Minimize, 0)
         result = so.create_solver(model, "highs", {"output_flag": True}).solve()

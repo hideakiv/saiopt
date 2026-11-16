@@ -203,3 +203,55 @@ def test_a_block_moved_into_a_parent_cant_be_read_through_its_old_handle():
     with pytest.raises(RuntimeError, match="moved into another block"):
         site.x
     assert model.site.x.is_same(model.block("site").var("x"))
+
+
+def test_groups_keep_their_keys_through_serialization():
+    block = so.Block()
+    block.x = so.Vars([("a", 1), ("b", 2.5)], bounds=(0, 1))
+    block.y = so.Vars([3, 1, 2])
+    block.cap = so.Constraints(["e", "w"], lambda k: block.y[3] <= 1)
+    block.region = so.Blocks([10, 20], lambda k: so.Block())
+
+    # Twice, so keys restored by the first deserialize are written again.
+    rebuilt = so.Block.deserialize(so.Block.deserialize(block.serialize()).serialize())
+
+    assert list(rebuilt.x) == [("a", 1), ("b", 2.5)]
+    assert rebuilt.x["b", 2.5].is_same(rebuilt.var("x[(b, 2.5)]"))
+    assert list(rebuilt.y) == [3, 1, 2]  # declaration order, not sorted
+    assert set(rebuilt.cap) == {"e", "w"}
+    assert set(rebuilt.region) == {10, 20}
+    assert rebuilt.vars("y") == rebuilt.y
+
+
+def test_keys_of_other_types_drop_on_serialization_but_items_stay_reachable():
+    block = so.Block()
+    block.flag = so.Vars([True, False])  # bool would come back as int, so it isn't written
+    rebuilt = so.Block.deserialize(block.serialize())
+    with pytest.raises(RuntimeError, match="without its keys"):
+        rebuilt.flag
+    assert rebuilt.var("flag[True]") is not None
+    assert list(rebuilt.vars("flag", [False, True])) == [False, True]
+
+
+def test_lookup_by_keys_finds_items_by_full_name_in_the_order_given():
+    model = so.Model()
+    model.x = so.Vars(range(5))
+    model.c = so.Constraints(range(3), lambda i: model.x[i] >= 0)
+    model.region = so.Blocks(["a", "b"], lambda k: so.Block())
+
+    picked = model.vars("x", [4, 0])
+    assert list(picked) == [4, 0]
+    assert picked[4].is_same(model.x[4])
+    assert list(model.constraints("c", [2])) == [2]
+    assert list(model.blocks("region", ["b"])) == ["b"]
+    with pytest.raises(RuntimeError, match=r"x\[9\]"):
+        model.vars("x", [9])
+
+
+def test_a_group_declared_in_cpp_round_trips_with_python_keys():
+    region = so.Block()
+    region.v = so.Var(bounds=(0, 6))
+    region.f = so.PiecewiseLinear(region.v, [0, 2, 4, 6], [0, 4, 1, 6])
+    rebuilt = so.Block.deserialize(region.serialize())
+    # add_piecewise's "delta" group is keyed by C++ std::size_t.
+    assert list(rebuilt.f.block.delta) == [0, 1, 2]

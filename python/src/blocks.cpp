@@ -61,6 +61,46 @@ std::ostream& operator<<(std::ostream& os, const PyKey& key) {
     return os;
 }
 
+namespace {
+
+std::optional<KeyValue> encode_key(nb::handle h) {
+    PyObject* o = h.ptr();
+    if (PyLong_CheckExact(o)) {
+        int overflow = 0;
+        long long value = PyLong_AsLongLongAndOverflow(o, &overflow);
+        if (overflow != 0) return std::nullopt;
+        return KeyValue{std::int64_t{value}};
+    }
+    if (PyFloat_CheckExact(o)) return KeyValue{PyFloat_AsDouble(o)};
+    if (PyUnicode_CheckExact(o)) return KeyValue{nb::cast<std::string>(h)};
+    if (PyTuple_CheckExact(o)) {
+        KeyValue::Tuple tuple;
+        nb::tuple t = nb::borrow<nb::tuple>(h);
+        for (std::size_t i = 0; i < t.size(); ++i) {
+            std::optional<KeyValue> item = encode_key(t[i]);
+            if (!item) return std::nullopt;
+            tuple.items.push_back(std::move(*item));
+        }
+        return KeyValue{std::move(tuple)};
+    }
+    return std::nullopt;
+}
+
+nb::object decode_key(const KeyValue& key) {
+    if (const auto* i = std::get_if<std::int64_t>(&key.value)) return nb::int_(*i);
+    if (const auto* d = std::get_if<double>(&key.value)) return nb::float_(*d);
+    if (const auto* str = std::get_if<std::string>(&key.value)) return nb::str(str->c_str(), str->size());
+    const auto& items = std::get<KeyValue::Tuple>(key.value).items;
+    nb::object tuple = nb::steal(PyTuple_New(static_cast<Py_ssize_t>(items.size())));
+    if (!tuple.is_valid()) throw nb::python_error();
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        PyTuple_SET_ITEM(tuple.ptr(), static_cast<Py_ssize_t>(i), decode_key(items[i]).release().ptr());
+    }
+    return tuple;
+}
+
+}  // namespace
+
 PyBlock PyBlock::owning(Block block) {
     PyBlock handle;
     handle.owned_ = std::make_unique<Block>(std::move(block));
@@ -422,8 +462,15 @@ void bind_block_api(nb::class_<Self>& cls) {
             "name"_a, "The child block named `name`, or None.")
         .def(
             "blocks",
-            [](Self& self, const std::string& name) {
+            [](Self& self, const std::string& name, std::optional<nb::iterable> keys) {
                 auto& b = target(self);
+                if (keys) {
+                    std::vector<PyKey> pykeys = collect_keys(*keys);
+                    b.blocks(name, pykeys);  // throws, naming the first key with no child
+                    nb::dict result;
+                    for (const PyKey& k : pykeys) result[k.obj] = child_of(self, indexed_name(name, k));
+                    return result;
+                }
                 Indexed<PyKey, Block*> typed = b.template blocks<PyKey>(name);
                 std::vector<Block*> ordered = b.blocks(name);
                 nb::dict result;
@@ -432,27 +479,46 @@ void bind_block_api(nb::class_<Self>& cls) {
                 }
                 return result;
             },
-            "name"_a, "The group of child blocks added by add_blocks(name, ...), as a dict from key to handle.")
+            "name"_a, "keys"_a = nb::none(),
+            "The group of child blocks added by add_blocks(name, ...), as a dict from key to handle. With "
+            "`keys`, the children named `name[key]` for those keys, in that order, found by full name.")
         .def("var", [](Self& self, const std::string& name) { return target(self).var(name); }, "name"_a,
              "The variable named `name` in this block, or None.")
         .def(
             "vars",
-            [](Self& self, const std::string& name) {
+            [](Self& self, const std::string& name, std::optional<nb::iterable> keys) {
                 auto& b = target(self);
+                if (keys) {
+                    std::vector<PyKey> pykeys = collect_keys(*keys);
+                    Indexed<PyKey, Variable> found = b.vars(name, pykeys);
+                    nb::dict result;
+                    for (const PyKey& k : pykeys) result[k.obj] = found[k];
+                    return result;
+                }
                 return group_as_dict(b.vars(name), [&]<typename K>() { return b.template vars<K>(name); });
             },
-            "name"_a, "The group of variables added by add_vars(name, ...), as a dict from key to Variable.")
+            "name"_a, "keys"_a = nb::none(),
+            "The group of variables added by add_vars(name, ...), as a dict from key to Variable. With `keys`, "
+            "the variables named `name[key]` for those keys, in that order, found by full name.")
         .def("constraint", [](Self& self, const std::string& name) { return target(self).constraint(name); },
              "name"_a, "The constraint named `name` in this block, or None.")
         .def(
             "constraints",
-            [](Self& self, const std::string& name) {
+            [](Self& self, const std::string& name, std::optional<nb::iterable> keys) {
                 auto& b = target(self);
+                if (keys) {
+                    std::vector<PyKey> pykeys = collect_keys(*keys);
+                    Indexed<PyKey, ConstraintRef> found = b.constraints(name, pykeys);
+                    nb::dict result;
+                    for (const PyKey& k : pykeys) result[k.obj] = found[k];
+                    return result;
+                }
                 return group_as_dict(b.constraints(name),
                                      [&]<typename K>() { return b.template constraints<K>(name); });
             },
-            "name"_a,
-            "The group of constraints added by add_constraints(name, ...), as a dict from key to ConstraintRef.");
+            "name"_a, "keys"_a = nb::none(),
+            "The group of constraints added by add_constraints(name, ...), as a dict from key to ConstraintRef. "
+            "With `keys`, the constraints named `name[key]` for those keys, in that order, found by full name.");
 }
 
 QuadraticExpression objective_of(nb::handle expr) {
@@ -542,3 +608,15 @@ void bind_blocks(nb::module_& m) {
 }
 
 }  // namespace saiopt::python
+
+namespace saiopt {
+
+std::optional<KeyValue> KeyCodec<python::PyKey>::encode(const python::PyKey& key) {
+    return python::encode_key(key.obj);
+}
+
+std::optional<python::PyKey> KeyCodec<python::PyKey>::decode(const KeyValue& value) {
+    return python::PyKey{python::decode_key(value)};
+}
+
+}  // namespace saiopt

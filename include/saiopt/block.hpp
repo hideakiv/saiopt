@@ -17,6 +17,7 @@
 #include "saiopt/constraint_ref.hpp"
 #include "saiopt/expression.hpp"
 #include "saiopt/indexed.hpp"
+#include "saiopt/key_codec.hpp"
 #include "saiopt/variable.hpp"
 
 namespace saiopt {
@@ -129,7 +130,8 @@ public:
             ordered.push_back(v);
         }
         Indexed<K, Variable> result = Indexed<K, Variable>::from_map(std::move(map));
-        indexed_var_groups_.emplace(std::move(name), IndexedVarGroup{std::move(ordered), std::any(result)});
+        indexed_var_groups_.emplace(std::move(name),
+                                    IndexedVarGroup{std::move(ordered), std::any(result), key_encoder<K, Variable>()});
         return result;
     }
 
@@ -157,7 +159,9 @@ public:
             ordered.push_back(ref);
         }
         Indexed<K, ConstraintRef> result = Indexed<K, ConstraintRef>::from_map(std::move(map));
-        indexed_constraint_groups_.emplace(std::move(name), IndexedConstraintGroup{std::move(ordered), std::any(result)});
+        indexed_constraint_groups_.emplace(
+            std::move(name),
+            IndexedConstraintGroup{std::move(ordered), std::any(result), key_encoder<K, ConstraintRef>()});
         return result;
     }
 
@@ -242,7 +246,8 @@ public:
             ordered.push_back(ref);
         }
         Indexed<K, BlockRef> result = Indexed<K, BlockRef>::from_map(std::move(map));
-        indexed_block_groups_.emplace(std::move(name), IndexedBlockGroup{std::move(ordered), std::any(result)});
+        indexed_block_groups_.emplace(std::move(name),
+                                      IndexedBlockGroup{std::move(ordered), std::any(result), key_encoder<K, BlockRef>()});
         return result;
     }
 
@@ -310,27 +315,19 @@ public:
     // key type than `K`.
     template <typename K>
     Indexed<K, const Block*> blocks(const std::string& name) const {
-        const IndexedBlockGroup& group = find_block_group(name);
-        const auto* typed = std::any_cast<Indexed<K, BlockRef>>(&group.typed);
-        if (!typed) {
-            throw std::runtime_error("blocks<K>(): the group of child blocks named \"" + name +
-                                      "\" wasn't declared with this key type");
-        }
+        Indexed<K, BlockRef> typed =
+            typed_group<K>(find_block_group(name), "blocks<K>(): the group of child blocks named \"" + name + "\"");
         std::map<K, const Block*> resolved;
-        for (const auto& [k, ref] : *typed) resolved.emplace(k, &block(ref));
+        for (const auto& [k, ref] : typed) resolved.emplace(k, &block(ref));
         return Indexed<K, const Block*>::from_map(std::move(resolved));
     }
 
     template <typename K>
     Indexed<K, Block*> blocks(const std::string& name) {
-        const IndexedBlockGroup& group = find_block_group(name);
-        const auto* typed = std::any_cast<Indexed<K, BlockRef>>(&group.typed);
-        if (!typed) {
-            throw std::runtime_error("blocks<K>(): the group of child blocks named \"" + name +
-                                      "\" wasn't declared with this key type");
-        }
+        Indexed<K, BlockRef> typed =
+            typed_group<K>(find_block_group(name), "blocks<K>(): the group of child blocks named \"" + name + "\"");
         std::map<K, Block*> resolved;
-        for (const auto& [k, ref] : *typed) resolved.emplace(k, &block(ref));
+        for (const auto& [k, ref] : typed) resolved.emplace(k, &block(ref));
         return Indexed<K, Block*>::from_map(std::move(resolved));
     }
 
@@ -379,13 +376,7 @@ public:
     // key type than `K`.
     template <typename K>
     Indexed<K, Variable> vars(const std::string& name) const {
-        const IndexedVarGroup& group = find_var_group(name);
-        const auto* typed = std::any_cast<Indexed<K, Variable>>(&group.typed);
-        if (!typed) {
-            throw std::runtime_error("vars<K>(): the group of variables named \"" + name +
-                                      "\" wasn't declared with this key type");
-        }
-        return *typed;
+        return typed_group<K>(find_var_group(name), "vars<K>(): the group of variables named \"" + name + "\"");
     }
 
     // Look up a constraint added under `name` in *this* block (not its
@@ -442,13 +433,8 @@ public:
     // different key type than `K`.
     template <typename K>
     Indexed<K, ConstraintRef> constraints(const std::string& name) const {
-        const IndexedConstraintGroup& group = find_constraint_group(name);
-        const auto* typed = std::any_cast<Indexed<K, ConstraintRef>>(&group.typed);
-        if (!typed) {
-            throw std::runtime_error("constraints<K>(): the group of constraints named \"" + name +
-                                      "\" wasn't declared with this key type");
-        }
-        return *typed;
+        return typed_group<K>(find_constraint_group(name),
+                              "constraints<K>(): the group of constraints named \"" + name + "\"");
     }
 
     // Serialize this block's whole structure -- variables, constraints,
@@ -493,11 +479,76 @@ private:
     // the exact Indexed<K, V> those calls returned, kept as a std::any
     // since K varies per group and Block itself isn't templated on it
     // (backs the typed vars<K>(name)/constraints<K>(name)/blocks<K>(name)).
+    //
+    // For serialize(), `encode` turns `typed`'s keys into KeyValues (null
+    // when K has no KeyCodec, or returning nullopt for a key it can't
+    // convert). A group rebuilt by deserialize() has no `typed`, since K
+    // isn't known then, but `restored` holds its keys as KeyValues, and
+    // typed_group turns them into whatever K a typed lookup asks for.
+    template <typename V>
+    using KeyedItems = std::vector<std::pair<KeyValue, V>>;
+    template <typename V>
+    using KeyEncoder = std::optional<KeyedItems<V>> (*)(const std::any& typed);
+
     template <typename V>
     struct IndexedGroup {
         std::vector<V> ordered;
         std::any typed;  // Indexed<K, V> for whichever K this group used
+        KeyEncoder<V> encode = nullptr;
+        std::optional<KeyedItems<V>> restored;
+
+        // This group's keys as KeyValues, with the item for each, or
+        // nullopt if they can't all be converted.
+        std::optional<KeyedItems<V>> keys() const {
+            if (encode) return encode(typed);
+            return restored;
+        }
     };
+
+    template <typename K, typename V>
+    static std::optional<KeyedItems<V>> encode_keys(const std::any& typed) {
+        KeyedItems<V> items;
+        for (const auto& [k, v] : std::any_cast<const Indexed<K, V>&>(typed)) {
+            std::optional<KeyValue> key = KeyCodec<K>::encode(k);
+            if (!key) return std::nullopt;
+            items.emplace_back(std::move(*key), v);
+        }
+        return items;
+    }
+
+    template <typename K, typename V>
+    static KeyEncoder<V> key_encoder() {
+        if constexpr (HasKeyCodec<K>) {
+            return &encode_keys<K, V>;
+        } else {
+            return nullptr;
+        }
+    }
+
+    // A group as the Indexed<K, V> a typed lookup returns: the one it was
+    // declared as, or, for a group rebuilt by deserialize(), its keys
+    // converted to K. `what` starts the error message.
+    template <typename K, typename V>
+    static Indexed<K, V> typed_group(const IndexedGroup<V>& group, const std::string& what) {
+        if (const auto* typed = std::any_cast<Indexed<K, V>>(&group.typed)) return *typed;
+        if (group.typed.has_value()) throw std::runtime_error(what + " wasn't declared with this key type");
+        if (!group.restored) {
+            throw std::runtime_error(what + " came from Block::deserialize without its keys, which serialize "
+                                            "couldn't write (see KeyCodec); look its items up by full name, or "
+                                            "by passing the keys");
+        }
+        if constexpr (HasKeyCodec<K>) {
+            std::map<K, V> map;
+            for (const auto& [key, value] : *group.restored) {
+                std::optional<K> k = KeyCodec<K>::decode(key);
+                if (!k) throw std::runtime_error(what + " has keys that don't convert to this key type");
+                map.emplace(std::move(*k), value);
+            }
+            return Indexed<K, V>::from_map(std::move(map));
+        } else {
+            throw std::runtime_error(what + " came from Block::deserialize, and this key type has no KeyCodec");
+        }
+    }
     using IndexedVarGroup = IndexedGroup<Variable>;
     using IndexedConstraintGroup = IndexedGroup<ConstraintRef>;
     using IndexedBlockGroup = IndexedGroup<BlockRef>;
@@ -530,6 +581,13 @@ private:
     // `var`, appended onto `path`. Returns false, leaving `path`
     // unmodified, if `var` isn't found in `block`'s own subtree.
     static bool find_var_path(const Block& block, Variable var, std::vector<std::uint64_t>& path);
+
+    // Re-registers an indexed group read back by deserialize(), from the
+    // indices of its members among this block's own variables (kind 0),
+    // constraints (1), or child blocks (2), and their keys if they were
+    // written. Throws std::runtime_error on an index out of range.
+    void restore_group(int kind, std::string name, const std::vector<std::uint64_t>& members,
+                       const std::optional<std::vector<std::pair<KeyValue, std::uint64_t>>>& keys);
 
     // Re-registers a piecewise function read back by deserialize(), once
     // its child block (named `name`) is attached.

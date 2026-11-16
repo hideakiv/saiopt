@@ -160,6 +160,19 @@ identifier, or a group whose name you only have as a string:
 that was never declared. Reading an attribute that names nothing raises
 ``AttributeError``, as for any Python object.
 
+``vars``, ``constraints``, and ``blocks`` also take the keys you want,
+and then look each item up by its full name, ``name[key]``, in the order
+given:
+
+.. code-block:: python
+
+   some = model.vars("ship", [("W2", "C3"), ("W1", "C1")])
+   print(list(some))
+
+.. code-block:: text
+
+   [('W2', 'C3'), ('W1', 'C1')]
+
 This matters most once a model is split into blocks, where the code that
 created a variable may be long gone by the time you need it. That's the
 next page, :doc:`blocks`.

@@ -12,6 +12,7 @@
 #include "saiopt/block.hpp"
 #include "saiopt/constraint.hpp"
 #include "saiopt/expression.hpp"
+#include "saiopt/key_codec.hpp"
 #include "saiopt/model.hpp"
 
 namespace saiopt::python {
@@ -96,3 +97,17 @@ std::optional<QuadraticExpression> as_quadratic(nb::handle h);
 double to_bound(double value);
 
 }  // namespace saiopt::python
+
+namespace saiopt {
+
+// Python keys through Block::serialize: an int, float, or str, or a tuple
+// of those -- exactly those types, not subclasses (bool, an IntEnum),
+// which would come back as their base type. Anything else makes the
+// whole group serialize without its keys. Both directions need the GIL.
+template <>
+struct KeyCodec<python::PyKey> {
+    static std::optional<KeyValue> encode(const python::PyKey& key);
+    static std::optional<python::PyKey> decode(const KeyValue& value);
+};
+
+}  // namespace saiopt

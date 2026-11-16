@@ -149,3 +149,27 @@ and ``Block::deserialize()``, which rebuilds it:
 Use these to save a block to disk, or to move one between processes some
 other way. The bytes are the same ones the Python ``saiopt.mpi`` module
 sends, so Python and C++ ranks can exchange blocks within one MPI job.
+
+The rebuilt block keeps every name, including groups and their keys. A
+typed lookup such as ``vars<int>("x")`` converts the keys back to the
+type you ask for, and throws if they don't convert. Keys come through
+when they're integers, floating-point numbers, ``std::string``, or a
+``std::tuple`` or ``std::pair`` of those. For a key type of your own,
+specialize ``saiopt::KeyCodec`` (see ``saiopt/key_codec.hpp``). A group
+keyed by any other type arrives without its keys. ``vars(name)``, which
+gives its members in declaration order, and ``vars(name, index)``, which
+looks each one up by full name, still work for it.
+
+.. code-block:: cpp
+
+   Block sender;
+   std::vector<int> periods{1, 2, 3};
+   SAIOPT_VARS(sender, stock, periods, .bounds = {0.0, 10.0});
+
+   Block received = Block::deserialize(sender.serialize());
+   Indexed<int, Variable> restored = received.vars<int>("stock");
+   std::printf("%zu %d\n", restored.size(), restored[2].is_same(*received.var("stock[2]")));
+
+.. code-block:: text
+
+   3 1

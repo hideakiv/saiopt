@@ -127,6 +127,14 @@ ranks can exchange blocks within one MPI job.
 You can also use ``block.serialize()`` and ``so.Block.deserialize(data)``
 directly, for example to save a block to disk or send it some other way.
 
+A received block keeps every name, including its groups and their keys,
+so ``region.produce`` or ``chunk.region[3]`` work on it as they did on
+the sender. Keys come through when they're ints, floats, strings, or
+tuples of those. A group with any other key, such as a ``bool`` or a
+custom object, arrives without its keys: reading it raises
+``RuntimeError``, but ``block.vars(name, keys)`` and lookups by full
+name still find its items.
+
 Starting subprocesses
 ---------------------
 

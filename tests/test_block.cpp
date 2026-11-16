@@ -7,6 +7,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "saiopt/model.hpp"
 #include "saiopt/solver.hpp"
@@ -61,6 +62,45 @@ TEST_CASE("duplicate constraint name in a block throws", "[block]") {
     Variable x = model.add_var("x", VariableDef::continuous());
     model.add_constraint("cap", x <= 5.0);
     REQUIRE_THROWS_AS(model.add_constraint("cap", x <= 5.0), std::runtime_error);
+}
+
+TEST_CASE("names can't be empty or contain a dot, but may contain spaces", "[block]") {
+    Model model;
+    Variable x = model.add_var("whole wheat", VariableDef::continuous());
+    REQUIRE(model.var("whole wheat").has_value());
+
+    auto rejects = [](auto&& add, const std::string& message) {
+        REQUIRE_THROWS_WITH(add(), Catch::Matchers::ContainsSubstring(message));
+    };
+    rejects([&] { model.add_var("", VariableDef::continuous()); }, "can't name a variable \"\": a name can't be empty");
+    rejects([&] { model.add_var("a.b", VariableDef::continuous()); }, "can't name a variable \"a.b\": a name can't contain '.'");
+    rejects([&] { model.add_constraint("a.b", x >= 0.0); }, "can't name a constraint \"a.b\"");
+    rejects([&] { model.add_constraint("", x >= 0.0); }, "can't name a constraint \"\"");
+    rejects([&] { model.add_block("a.b", Block{}); }, "can't name a child block \"a.b\"");
+    rejects([&] { model.add_block_scaled("", Block{}, 2.0); }, "can't name a child block \"\"");
+    rejects([&] { model.add_sos2("a.b", {x, x}); }, "can't name an SOS2 set");
+    rejects([&] { model.add_vars("a.b", std::vector<int>{1}, [](int) { return VariableDef::continuous(); }); },
+            "can't name a group of variables");
+    rejects([&] { model.add_constraints("", std::vector<int>{1}, [&](int) { return x >= 0.0; }); },
+            "can't name a group of constraints \"\"");
+    rejects([&] { model.add_blocks("a.b", std::vector<int>{1}, [](int) { return Block{}; }); },
+            "can't name a group of child blocks");
+    rejects([&] { model.add_piecewise("a.b", x, {0.0, 1.0}, {0.0, 1.0}); }, "can't name a piecewise function");
+    // Nothing was added by the calls that threw.
+    REQUIRE_FALSE(model.var("a.b").has_value());
+    REQUIRE(model.block("a.b") == nullptr);
+}
+
+TEST_CASE("keys may contain a dot, and such names survive serialization", "[block]") {
+    Block block;
+    auto x = block.add_vars("x", std::vector<double>{2.5}, [](double) { return VariableDef::continuous(); });
+    block.add_constraints("c", std::vector<std::string>{"a.b"}, [&](const std::string&) { return x[2.5] >= 0.0; });
+    block.add_blocks("site", std::vector<std::string>{"n.1"}, [](const std::string&) { return Block{}; });
+
+    Block rebuilt = Block::deserialize(block.serialize());
+    REQUIRE(rebuilt.var("x[2.5]").has_value());
+    REQUIRE(rebuilt.constraint("c[a.b]").has_value());
+    REQUIRE(rebuilt.block("site[n.1]") != nullptr);
 }
 
 TEST_CASE("print labels nested-block variables by their qualified path", "[block]") {

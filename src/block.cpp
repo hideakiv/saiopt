@@ -10,7 +10,21 @@
 
 namespace saiopt {
 
+void detail::check_name(const char* what, const std::string& name) {
+    if (name.empty()) throw std::runtime_error(std::string("can't name ") + what + " \"\": a name can't be empty");
+    if (name.find('.') != std::string::npos) {
+        throw std::runtime_error(std::string("can't name ") + what + " \"" + name +
+                                 "\": a name can't contain '.', which separates block names in full names such as "
+                                 "\"north.produce\"");
+    }
+}
+
 Variable Block::add_var(std::string name, VariableDef def) {
+    detail::check_name("a variable", name);
+    return add_var_unchecked(std::move(name), def);
+}
+
+Variable Block::add_var_unchecked(std::string name, VariableDef def) {
     std::size_t index = vars_.size();
     Variable variable(id_, index);
     auto [it, inserted] = var_names_.emplace(std::move(name), variable);
@@ -22,6 +36,11 @@ Variable Block::add_var(std::string name, VariableDef def) {
 }
 
 ConstraintRef Block::add_constraint(std::string name, Constraint constraint) {
+    detail::check_name("a constraint", name);
+    return add_constraint_unchecked(std::move(name), std::move(constraint));
+}
+
+ConstraintRef Block::add_constraint_unchecked(std::string name, Constraint constraint) {
     std::size_t index = constraints_.size();
     ConstraintRef ref(id_, index);
     auto [it, inserted] = constraint_names_.emplace(name, ref);
@@ -34,6 +53,11 @@ ConstraintRef Block::add_constraint(std::string name, Constraint constraint) {
 }
 
 void Block::add_sos2(std::string name, std::vector<Variable> vars) {
+    detail::check_name("an SOS2 set", name);
+    add_sos2_unchecked(std::move(name), std::move(vars));
+}
+
+void Block::add_sos2_unchecked(std::string name, std::vector<Variable> vars) {
     if (vars.size() < 2) {
         throw std::runtime_error("the SOS2 set \"" + name + "\" needs at least two variables");
     }
@@ -52,6 +76,11 @@ BlockRef Block::add_block(std::string name, Block child) {
 }
 
 BlockRef Block::add_block_scaled(std::string name, Block child, double multiplier) {
+    detail::check_name("a child block", name);
+    return add_block_unchecked(std::move(name), std::move(child), multiplier);
+}
+
+BlockRef Block::add_block_unchecked(std::string name, Block child, double multiplier) {
     std::size_t index = children_.size();
     BlockRef ref(index);
     auto [it, inserted] = child_names_.emplace(name, index);
@@ -128,6 +157,18 @@ namespace detail {
 // Block::deserialize's way into the private state that the public API
 // can't rebuild.
 struct BlockReader {
+    static Variable add_var(Block& block, std::string name, VariableDef def) {
+        return block.add_var_unchecked(std::move(name), def);
+    }
+    static void add_constraint(Block& block, std::string name, Constraint constraint) {
+        block.add_constraint_unchecked(std::move(name), std::move(constraint));
+    }
+    static void add_sos2(Block& block, std::string name, std::vector<Variable> vars) {
+        block.add_sos2_unchecked(std::move(name), std::move(vars));
+    }
+    static void add_block(Block& block, std::string name, Block child, double multiplier) {
+        block.add_block_unchecked(std::move(name), std::move(child), multiplier);
+    }
     static void restore_piecewise(Block& block, std::string name, LinearExpression value) {
         block.restore_piecewise(std::move(name), std::move(value));
     }
@@ -343,7 +384,7 @@ RebuiltBlock read_block(Reader& reader) {
                            : kind == VarKind::Integer   ? VariableDef::integer()
                                                          : VariableDef::binary();
         def.bound(lower, upper);
-        own_vars.push_back(block.add_var(std::move(name), def));
+        own_vars.push_back(detail::BlockReader::add_var(block, std::move(name), def));
     }
 
     std::uint64_t num_children = reader.read_u64();
@@ -365,7 +406,7 @@ RebuiltBlock read_block(Reader& reader) {
         double lower = reader.read_f64();
         double upper = reader.read_f64();
         LinearExpression expr = read_expression(reader, own_vars, children);
-        block.add_constraint(std::move(name), Constraint(std::move(expr), lower, upper));
+        detail::BlockReader::add_constraint(block, std::move(name), Constraint(std::move(expr), lower, upper));
     }
 
     block.set_objective(read_quadratic_expression(reader, own_vars, children));
@@ -377,7 +418,7 @@ RebuiltBlock read_block(Reader& reader) {
         std::vector<Variable> members;
         members.reserve(static_cast<std::size_t>(num_members));
         for (std::uint64_t j = 0; j < num_members; ++j) members.push_back(read_var_ref(reader, own_vars, children));
-        block.add_sos2(std::move(name), std::move(members));
+        detail::BlockReader::add_sos2(block, std::move(name), std::move(members));
     }
 
     std::uint64_t num_piecewise = reader.read_u64();
@@ -388,7 +429,7 @@ RebuiltBlock read_block(Reader& reader) {
     }
 
     for (std::size_t i = 0; i < children.size(); ++i) {
-        block.add_block_scaled(child_names[i], std::move(children[i].block), child_multipliers[i]);
+        detail::BlockReader::add_block(block, child_names[i], std::move(children[i].block), child_multipliers[i]);
     }
 
     for (auto& [name, value] : piecewise) {

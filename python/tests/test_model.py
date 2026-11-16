@@ -62,6 +62,21 @@ def test_duplicate_names_raise():
         model.add_var("x")
 
 
+def test_names_cant_be_empty_or_contain_a_dot():
+    model = so.Model()
+    x = model.add_var("whole wheat")  # spaces are fine
+    with pytest.raises(RuntimeError, match="a name can't be empty"):
+        model.add_var("")
+    with pytest.raises(RuntimeError, match=r"can't name a constraint \"a\.b\""):
+        model.add_constraint("a.b", x >= 0)
+    with pytest.raises(RuntimeError, match="can't name a group of child blocks"):
+        model.add_blocks("a.b", [1], lambda k: so.Block())
+    # A key may contain one, as a float does.
+    model.add_vars("y", [2.5])
+    model.add_vars("z", ["n.1"])
+    assert model.var("y[2.5]") is not None and model.var("z[n.1]") is not None
+
+
 def test_binary_and_integer_variables():
     model = so.Model()
     pick = model.add_vars("pick", range(4), kind=so.VarKind.Binary)

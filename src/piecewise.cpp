@@ -56,6 +56,7 @@ VariableDef fraction() { return VariableDef::continuous().bound(0.0, 1.0); }
 // (points[j + 1] - points[j]), and f(x) likewise.
 Piecewise Block::add_piecewise(std::string name, LinearExpression x, std::vector<double> points,
                                std::vector<double> values, PiecewiseMethod method) {
+    detail::check_name("a piecewise function", name);
     check_breakpoints(name, points, values);
     if (block(name)) throw std::runtime_error("a child block named \"" + name + "\" already exists in this block");
     if (constraint(name)) throw std::runtime_error("a constraint named \"" + name + "\" already exists in this block");

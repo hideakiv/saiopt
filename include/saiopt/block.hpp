@@ -26,6 +26,13 @@ class ModelFlattener;
 
 namespace detail {
 struct BlockReader;
+
+// Throws std::runtime_error unless `name` can name `what` (e.g. "a
+// variable"): it must be nonempty and contain no '.', which joins block
+// names into full names such as "north.produce". Generated names, such
+// as an indexed group's "x[2.5]", aren't checked, since a key may
+// contain a '.'.
+void check_name(const char* what, const std::string& name);
 }  // namespace detail
 
 // A lightweight, copyable handle to a child block added via
@@ -108,7 +115,8 @@ public:
     // always reachable again via var(name) even once its own handle
     // (this call's return value) is out of scope. Throws
     // std::runtime_error if a variable named `name` already exists in
-    // this block.
+    // this block, or if `name` is empty or contains a '.' (see
+    // detail::check_name); the same goes for every add_* method's name.
     Variable add_var(std::string name, VariableDef def);
 
     // Add one variable per item in `index`, built by `def(k)`, each named
@@ -119,13 +127,14 @@ public:
     template <typename Range, typename DefFn>
     auto add_vars(std::string name, const Range& index, DefFn&& def) {
         using K = std::decay_t<decltype(*std::begin(index))>;
+        detail::check_name("a group of variables", name);
         if (indexed_var_groups_.count(name)) {
             throw std::runtime_error("a group of variables named \"" + name + "\" already exists in this block");
         }
         std::map<K, Variable> map;
         std::vector<Variable> ordered;
         for (const auto& k : index) {
-            Variable v = add_var(detail::indexed_name(name, k), def(k));
+            Variable v = add_var_unchecked(detail::indexed_name(name, k), def(k));
             map.emplace(k, v);
             ordered.push_back(v);
         }
@@ -148,13 +157,14 @@ public:
     template <typename Range, typename Fn>
     auto add_constraints(std::string name, const Range& index, Fn&& f) {
         using K = std::decay_t<decltype(*std::begin(index))>;
+        detail::check_name("a group of constraints", name);
         if (indexed_constraint_groups_.count(name)) {
             throw std::runtime_error("a group of constraints named \"" + name + "\" already exists in this block");
         }
         std::map<K, ConstraintRef> map;
         std::vector<ConstraintRef> ordered;
         for (const auto& k : index) {
-            ConstraintRef ref = add_constraint(detail::indexed_name(name, k), f(k));
+            ConstraintRef ref = add_constraint_unchecked(detail::indexed_name(name, k), f(k));
             map.emplace(k, ref);
             ordered.push_back(ref);
         }
@@ -235,13 +245,14 @@ public:
     template <typename Range, typename Fn, typename MultFn>
     auto add_blocks_scaled(std::string name, const Range& index, Fn&& f, MultFn&& multiplier) {
         using K = std::decay_t<decltype(*std::begin(index))>;
+        detail::check_name("a group of child blocks", name);
         if (indexed_block_groups_.count(name)) {
             throw std::runtime_error("a group of child blocks named \"" + name + "\" already exists in this block");
         }
         std::map<K, BlockRef> map;
         std::vector<BlockRef> ordered;
         for (const auto& k : index) {
-            BlockRef ref = add_block_scaled(detail::indexed_name(name, k), f(k), multiplier(k));
+            BlockRef ref = add_block_unchecked(detail::indexed_name(name, k), f(k), multiplier(k));
             map.emplace(k, ref);
             ordered.push_back(ref);
         }
@@ -581,6 +592,14 @@ private:
     // `var`, appended onto `path`. Returns false, leaving `path`
     // unmodified, if `var` isn't found in `block`'s own subtree.
     static bool find_var_path(const Block& block, Variable var, std::vector<std::uint64_t>& path);
+
+    // add_var, add_constraint, add_block_scaled and add_sos2 without
+    // check_name, for names saiopt generated (an indexed group's
+    // "x[2.5]") or read back by deserialize().
+    Variable add_var_unchecked(std::string name, VariableDef def);
+    ConstraintRef add_constraint_unchecked(std::string name, Constraint constraint);
+    BlockRef add_block_unchecked(std::string name, Block child, double multiplier);
+    void add_sos2_unchecked(std::string name, std::vector<Variable> vars);
 
     // Re-registers an indexed group read back by deserialize(), from the
     // indices of its members among this block's own variables (kind 0),

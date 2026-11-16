@@ -187,6 +187,13 @@ have stored in a local variable:
    constraints:
      at least one: rye + whole wheat >= 1
 
+A name can be any nonempty string without a ``.``, so spaces are fine.
+saiopt joins block names with ``.`` into full names such as
+``north.produce``, and rejects a ``.`` in a name you give so that full
+names stay unambiguous. A key of an indexed group may still contain one,
+as in ``x[2.5]``. ``add_*`` throws ``std::runtime_error`` for a name
+that breaks these rules, as it does for one already used in the block.
+
 The two styles can be mixed in one model. The name saiopt uses is only
 ever the string, never the C++ variable's name: ``auto b =
 model.add_var("bread", ...)`` works, and ``model.var("bread")`` finds

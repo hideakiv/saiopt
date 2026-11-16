@@ -156,6 +156,13 @@ as a string and return the new item:
    rye = other.var("rye")                    # look an item up by its name
    other.add_constraint("at least one", other.var("whole wheat") + rye >= 1)
 
+A name can be any nonempty string without a ``.``, so spaces are fine.
+saiopt joins block names with ``.`` into full names such as
+``north.produce``, and rejects a ``.`` in a name you give so that full
+names stay unambiguous. A key of an indexed group may still contain one,
+as in ``x[2.5]``. ``add_*`` raises ``RuntimeError`` for a name that
+breaks these rules, as it does for one already used in the block.
+
 Each attribute declaration has an ``add_*`` counterpart: ``add_var``,
 ``add_vars``, ``add_constraint``, ``add_constraints``, ``add_block``,
 ``add_blocks``, and ``add_piecewise``. The two styles can be mixed in one

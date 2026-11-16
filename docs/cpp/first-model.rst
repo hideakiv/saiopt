@@ -133,6 +133,66 @@ To solve with SCIP instead, change only the backend name:
 ``create_solver(model, "scip")``. Nothing else changes, and no
 backend-specific header is needed.
 
+Names that aren't identifiers
+-----------------------------
+
+Each macro is shorthand for a ``Block`` method that takes the name as a
+string. ``SAIOPT_VAR(model, bread, ...)`` is
+``auto bread = model.add_var("bread", ...)``:
+
+===========================================  =====================================
+Macro                                        Method
+===========================================  =====================================
+``SAIOPT_VAR``                               ``add_var(name, def)``
+``SAIOPT_VARS``                              ``add_vars(name, index, def)``
+``SAIOPT_CONSTRAINT``                        ``add_constraint(name, constraint)``
+``SAIOPT_CONSTRAINTS``                       ``add_constraints(name, index, f)``
+``SAIOPT_BLOCK``, ``SAIOPT_BLOCK_SCALED``    ``add_block``, ``add_block_scaled``
+``SAIOPT_BLOCKS``, ``SAIOPT_BLOCKS_SCALED``  ``add_blocks``, ``add_blocks_scaled``
+``SAIOPT_PIECEWISE``                         ``add_piecewise``
+``SAIOPT_OBJECTIVE``                         ``set_objective``
+===========================================  =====================================
+
+The macros turn the identifier into the name when the program compiles.
+Call the methods yourself when that can't work:
+
+* the name isn't a C++ identifier, such as ``"whole wheat"``;
+* the name is computed while the program runs, such as one per item read
+  from a file;
+* the code is a generic helper that receives the name as a parameter.
+
+``add_var`` takes a ``VariableDef`` rather than the macro's designated
+initializers, and every method returns the same handle the macro would
+have stored in a local variable:
+
+.. code-block:: cpp
+
+   Model other;
+   for (const char* food : {"whole wheat", "rye"}) {
+       other.add_var(food, VariableDef::continuous().bound(0.0, kInfinity));
+   }
+
+   Variable rye = *other.var("rye");   // look a variable up by its name
+   other.add_constraint("at least one", *other.var("whole wheat") + rye >= 1.0);
+   other.print();
+
+.. code-block:: text
+
+   model (no objective)
+   objective:
+     0
+   variables:
+     whole wheat  continuous  [0, +inf]
+     rye  continuous  [0, +inf]
+   constraints:
+     at least one: rye + whole wheat >= 1
+
+The two styles can be mixed in one model. The name saiopt uses is only
+ever the string, never the C++ variable's name: ``auto b =
+model.add_var("bread", ...)`` works, and ``model.var("bread")`` finds
+it. The macros just keep the two the same, so that output and lookups
+match the code.
+
 The whole program
 -----------------
 

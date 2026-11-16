@@ -45,13 +45,14 @@ Step 3: add constraints
 -----------------------
 
 Arithmetic on variables builds expressions, and comparing an expression
-with ``<=``, ``>=``, or ``==`` builds a constraint. Assigning a
-constraint to an attribute adds it under that name:
+with ``<=``, ``>=``, or ``==`` builds a constraint. Assigning
+``so.Constraint(...)`` of one to an attribute adds it under that name, the
+same way ``so.Var`` declares a variable:
 
 .. code-block:: python
 
-   model.protein = 4 * model.bread + 8 * model.milk >= 20
-   model.calories = 100 * model.bread + 150 * model.milk >= 400
+   model.protein = so.Constraint(4 * model.bread + 8 * model.milk >= 20)
+   model.calories = so.Constraint(100 * model.bread + 150 * model.milk >= 400)
 
 Step 4: set the objective
 -------------------------
@@ -130,8 +131,8 @@ The whole program
    model = so.Model()
    model.bread = so.Var(bounds=(0, so.inf))
    model.milk = so.Var(bounds=(0, so.inf))
-   model.protein = 4 * model.bread + 8 * model.milk >= 20
-   model.calories = 100 * model.bread + 150 * model.milk >= 400
+   model.protein = so.Constraint(4 * model.bread + 8 * model.milk >= 20)
+   model.calories = so.Constraint(100 * model.bread + 150 * model.milk >= 400)
    model.set_objective(so.ObjectiveSense.Minimize, 2 * model.bread + 3 * model.milk)
 
    result = so.create_solver(model, "highs").solve()

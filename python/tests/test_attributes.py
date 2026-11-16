@@ -11,8 +11,8 @@ def diet_model():
     model = so.Model()
     model.bread = so.Var(bounds=(0, so.inf))
     model.milk = so.Var(bounds=(0, so.inf))
-    model.protein = 4 * model.bread + 8 * model.milk >= 20
-    model.calories = 100 * model.bread + 150 * model.milk >= 400
+    model.protein = so.Constraint(4 * model.bread + 8 * model.milk >= 20)
+    model.calories = so.Constraint(100 * model.bread + 150 * model.milk >= 400)
     model.set_objective(so.ObjectiveSense.Minimize, 2 * model.bread + 3 * model.milk)
     return model
 
@@ -29,6 +29,22 @@ def test_attributes_are_the_same_items_as_the_add_methods_look_up():
     model = diet_model()
     assert model.bread.is_same(model.var("bread"))
     assert model.protein == model.constraint("protein")
+
+
+def test_single_constraint_forms():
+    model = so.Model()
+    model.x = so.Var(bounds=(0, 10))
+    model.y = so.Var(bounds=(0, 10))
+    model.ranged = so.Constraint(model.x - model.y, 1, 4)
+    model.wrapped = so.Constraint(model.x <= 5)
+    model.bare = model.x + model.y >= 2  # the object so.Constraint(...) copies, so it's accepted too
+    model.set_objective(so.ObjectiveSense.Maximize, model.x + model.y)
+    assert all(model.constraint(name) is not None for name in ("ranged", "wrapped", "bare"))
+    # x = 5 and y = x - 1 = 4.
+    assert so.create_solver(model, "highs").solve().objective_value == pytest.approx(9.0)
+    # Copying keeps what a comparison of two variables knows: its truth value.
+    assert so.Constraint(model.x == model.x)
+    assert not so.Constraint(model.x == model.y)
 
 
 def test_var_kind_and_bounds():
@@ -66,7 +82,7 @@ def test_child_blocks_plain_scaled_and_grouped():
     model.south = so.Scaled(build_site(1.0), 3.0)
     model.region = so.Blocks(["e", "w"], lambda k: build_site(2.0), multiplier=lambda k: 1.0 if k == "e" else 0.5)
     total = model.north.make + model.south.make + model.region["e"].make + model.region["w"].make
-    model.demand = total >= 25
+    model.demand = so.Constraint(total >= 25)
     model.set_objective(so.ObjectiveSense.Minimize, 0)
 
     result = so.create_solver(model, "highs").solve()

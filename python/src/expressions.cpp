@@ -284,7 +284,13 @@ void bind_expressions(nb::module_& m) {
     nb::class_<PyConstraint>(m, "Constraint",
                              "A linear constraint `lower <= expression <= upper`. Built by <=, >=, or == on "
                              "expressions, or directly as Constraint(expr, lower, upper) for a two-sided range "
-                             "(Python can't chain `lower <= expr <= upper` into one).")
+                             "(Python can't chain `lower <= expr <= upper` into one). Constraint(x + y >= 2) "
+                             "copies a comparison, which is how a single constraint is declared by attribute: "
+                             "model.c = Constraint(x + y >= 2).")
+        // Listed first: the (expression, lower, upper) overload would
+        // otherwise take the comparison as its expression and reject it as
+        // nonlinear.
+        .def(nb::init<const PyConstraint&>(), "constraint"_a)
         .def(
             "__init__",
             [](PyConstraint* self, nb::handle expr, double lower, double upper) {

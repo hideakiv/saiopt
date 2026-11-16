@@ -3,7 +3,10 @@
 ``model.x = so.Var(bounds=(0, 10))`` adds a variable named ``x`` to
 ``model``, and reading ``model.x`` later looks it up again. The value
 assigned says what to declare: one of the types below, a ``Constraint``
-(any comparison such as ``x + y >= 2``), or a standalone ``Block``.
+(``so.Constraint(x + y >= 2)`` or ``so.Constraint(expr, lower, upper)``),
+or a standalone ``Block``. A bare comparison is the same object as
+``so.Constraint(...)`` of it and is accepted too, but examples wrap it so
+that every declaration names what it declares.
 
 The attribute name becomes the saiopt name, so it must be a Python
 identifier. Names that aren't, or that are computed at runtime, still
@@ -174,7 +177,7 @@ def set_attribute(owner: Any, name: str, value: Any) -> None:
         hint = " -- to declare a variable, assign so.Var(...)" if isinstance(value, _saiopt.Variable) else ""
         raise TypeError(
             f"can't declare {name!r} from a value of type {type(value).__name__}{hint}. Assign so.Var, "
-            f"so.Vars, a constraint, so.Constraints, a Block, so.Scaled, so.Blocks, or so.PiecewiseLinear"
+            f"so.Vars, so.Constraint, so.Constraints, a Block, so.Scaled, so.Blocks, or so.PiecewiseLinear"
         )
 
     # A variable, a constraint, or a group of either: the same value a

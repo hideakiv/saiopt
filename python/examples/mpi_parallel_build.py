@@ -33,7 +33,7 @@ if rank == 0:
     model = so.Model()
     model.region = so.Blocks(range(size), lambda i: regions[i])
     produced = {i: block.produce for i, block in model.region.items()}
-    model.meet_demand = so.quicksum(produced.values()) >= DEMAND
+    model.meet_demand = so.Constraint(so.quicksum(produced.values()) >= DEMAND)
     model.set_objective(so.ObjectiveSense.Minimize, 0)
 
     result = so.create_solver(model, "highs").solve()

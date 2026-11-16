@@ -53,7 +53,7 @@ def saiopt_flat(K, N):
                                lambda kj: so.quicksum(x[kj[0], i, kj[1]] for i in range(N)) >= 1)
     model.used_def = so.Constraints(range(K),
                                     lambda k: used[k] == so.quicksum(x[k, i, j] for i in range(N) for j in range(N)))
-    model.link = so.quicksum(used.values()) <= 1e9
+    model.link = so.Constraint(so.quicksum(used.values()) <= 1e9)
     model.set_objective(so.ObjectiveSense.Minimize, so.quicksum(cost(*key) * x[key] for key in keys))
 
     def solve():

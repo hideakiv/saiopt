@@ -27,7 +27,7 @@ B charges a flat 4 per unit:
    model = so.Model()
    model.from_a = so.Var(bounds=(0, so.inf))
    model.from_b = so.Var(bounds=(0, so.inf))
-   model.demand = model.from_a + model.from_b == 180
+   model.demand = so.Constraint(model.from_a + model.from_b == 180)
 
 Step 2: the piecewise cost
 --------------------------
@@ -83,7 +83,7 @@ an SOS2 set. This needs a backend that supports SOS2 sets, such as
    sos_model = so.Model()
    sos_model.from_a = so.Var(bounds=(0, so.inf))
    sos_model.from_b = so.Var(bounds=(0, so.inf))
-   sos_model.demand = sos_model.from_a + sos_model.from_b == 180
+   sos_model.demand = so.Constraint(sos_model.from_a + sos_model.from_b == 180)
    sos_model.cost_a = so.PiecewiseLinear(sos_model.from_a, [0, 100, 250], [0, 500, 800],
                                          method=so.PiecewiseMethod.Sos2)
    sos_model.set_objective(so.ObjectiveSense.Minimize, sos_model.cost_a.value + 4 * sos_model.from_b)

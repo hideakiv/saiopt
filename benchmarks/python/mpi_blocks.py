@@ -37,7 +37,7 @@ def region(k):
     b.cap = so.Constraints(range(N), lambda i: so.quicksum(x[i, j] for j in range(N)) <= 2.0 * N)
     b.dem = so.Constraints(range(N), lambda j: so.quicksum(x[i, j] for i in range(N)) >= 1)
     b.used = so.Var(bounds=(0, so.inf))
-    b.used_def = b.used == so.quicksum(x.values())
+    b.used_def = so.Constraint(b.used == so.quicksum(x.values()))
     b.set_objective(so.quicksum((1 + (i * 7 + j * 13 + k) % 10) * x[i, j] for i, j in arcs))
     return b
 
@@ -55,7 +55,7 @@ for _ in range(REPS):
         model = so.Model()
         model.rank = so.Blocks(range(len(chunks)), lambda r: chunks[r])
         used = [region.used for c in model.rank.values() for region in c.region.values()]
-        model.link = so.quicksum(used) <= 1e9
+        model.link = so.Constraint(so.quicksum(used) <= 1e9)
         model.set_objective(so.ObjectiveSense.Minimize, 0)
         result = so.create_solver(model, "highs", {"output_flag": True}).solve()
         t2 = MPI.Wtime()

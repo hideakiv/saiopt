@@ -21,7 +21,7 @@ Step 1: build and solve once
    model = so.Model()
    model.x = so.Var(bounds=(0, 6))
    model.y = so.Var(bounds=(0, so.inf))
-   model.demand = model.x + model.y >= 10
+   model.demand = so.Constraint(model.x + model.y >= 10)
    model.set_objective(so.ObjectiveSense.Minimize, 2 * model.x + 3 * model.y)
 
    x, y, demand = model.x, model.y, model.demand

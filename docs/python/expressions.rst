@@ -79,13 +79,14 @@ Constraints
 
 Comparing two expressions (or an expression and a number) with ``<=``,
 ``>=``, or ``==`` builds a ``Constraint``. Variables and numbers can be
-on either side:
+on either side. To declare one, wrap it in ``so.Constraint(...)`` and
+assign it to an attribute:
 
 .. code-block:: python
 
-   model.budget = total_weight <= 120
-   model.balance = x + y == 2 * n
-   model.floor = 1 <= y
+   model.budget = so.Constraint(total_weight <= 120)
+   model.balance = so.Constraint(x + y == 2 * n)
+   model.floor = so.Constraint(1 <= y)
 
 Two-sided ranges
 ~~~~~~~~~~~~~~~~
@@ -128,7 +129,7 @@ not constraints: ``x * y <= 3`` raises ``TypeError``.
    qp = so.Model()
    qp.a = so.Var(bounds=(0, 10))
    qp.b = so.Var(bounds=(0, 10))
-   qp.total = qp.a + qp.b >= 4
+   qp.total = so.Constraint(qp.a + qp.b >= 4)
    qp.set_objective(so.ObjectiveSense.Minimize, (qp.a - 1) ** 2 + (qp.b - 2) ** 2 + qp.a * qp.b)
 
    result = so.create_solver(qp, "highs").solve()

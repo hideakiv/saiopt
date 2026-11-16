@@ -37,7 +37,7 @@ applies to it.
        block = so.Block()
        block.produce = so.Vars(periods, bounds=(0, period_capacity))
        block.total = so.Var(bounds=(0, so.inf))
-       block.total_link = block.total == so.quicksum(block.produce.values())
+       block.total_link = so.Constraint(block.total == so.quicksum(block.produce.values()))
        block.set_objective(unit_cost * block.total)
        return block
 
@@ -76,9 +76,9 @@ facilities together:
 .. code-block:: python
 
    model.is_open = so.Vars(["north", "south"], kind=so.VarKind.Binary)
-   model.north_cap = north_total <= 100 * model.is_open["north"]
-   model.south_cap = south_total <= 80 * model.is_open["south"]
-   model.demand = north_total + south_total >= 90
+   model.north_cap = so.Constraint(north_total <= 100 * model.is_open["north"])
+   model.south_cap = so.Constraint(south_total <= 80 * model.is_open["south"])
+   model.demand = so.Constraint(north_total + south_total >= 90)
 
 A constraint inside ``north`` that used ``is_open`` would be rejected
 with a ``RuntimeError`` when you create the solver.
@@ -128,7 +128,7 @@ from key to child:
        multiplier=lambda r: 1.0 if r == "east" else 0.9,
    )
    totals = {r: region.total for r, region in regional.region.items()}
-   regional.demand = so.quicksum(totals.values()) >= 100
+   regional.demand = so.Constraint(so.quicksum(totals.values()) >= 100)
    regional.set_objective(so.ObjectiveSense.Minimize, 0)
 
    print(round(so.create_solver(regional, "highs").solve().objective_value, 2))

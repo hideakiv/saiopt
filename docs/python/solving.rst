@@ -12,8 +12,8 @@ examples use the diet model from :doc:`first-model`:
    model = so.Model()
    model.bread = so.Var(bounds=(0, so.inf))
    model.milk = so.Var(bounds=(0, so.inf))
-   model.protein = 4 * model.bread + 8 * model.milk >= 20
-   model.calories = 100 * model.bread + 150 * model.milk >= 400
+   model.protein = so.Constraint(4 * model.bread + 8 * model.milk >= 20)
+   model.calories = so.Constraint(100 * model.bread + 150 * model.milk >= 400)
    model.set_objective(so.ObjectiveSense.Minimize, 2 * model.bread + 3 * model.milk)
 
    bread, milk, calories = model.bread, model.milk, model.calories

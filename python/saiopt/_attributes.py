@@ -33,8 +33,8 @@ class Var:
         self.kind = kind
         self.bounds = bounds
 
-    def _declare(self, owner: Any, name: str) -> None:
-        owner.add_var(name, **_given(kind=self.kind, bounds=self.bounds))
+    def _declare(self, owner: Any, name: str) -> Any:
+        return owner.add_var(name, **_given(kind=self.kind, bounds=self.bounds))
 
     def __repr__(self) -> str:
         return f"Var({_args(kind=self.kind, bounds=self.bounds)})"
@@ -55,8 +55,8 @@ class Vars:
         self.kind = kind
         self.bounds = bounds
 
-    def _declare(self, owner: Any, name: str) -> None:
-        owner.add_vars(name, self.keys, **_given(kind=self.kind, bounds=self.bounds))
+    def _declare(self, owner: Any, name: str) -> Any:
+        return owner.add_vars(name, self.keys, **_given(kind=self.kind, bounds=self.bounds))
 
     def __repr__(self) -> str:
         return f"Vars({self.keys!r}{_args(kind=self.kind, bounds=self.bounds, lead=True)})"
@@ -75,8 +75,8 @@ class Constraints:
         self.keys = keys
         self.rule = rule
 
-    def _declare(self, owner: Any, name: str) -> None:
-        owner.add_constraints(name, self.keys, self.rule)
+    def _declare(self, owner: Any, name: str) -> Any:
+        return owner.add_constraints(name, self.keys, self.rule)
 
     def __repr__(self) -> str:
         return f"Constraints({self.keys!r}, {self.rule!r})"
@@ -163,10 +163,11 @@ def set_attribute(owner: Any, name: str, value: Any) -> None:
     if taken:
         raise AttributeError(f"{name!r} is already a {taken[0]} in this block")
 
+    declared = None  # what reading the attribute will give, when it can be cached now
     if isinstance(value, _DECLARATIONS):
-        value._declare(owner, name)
+        declared = value._declare(owner, name)
     elif isinstance(value, _saiopt.Constraint):
-        owner.add_constraint(name, value)
+        declared = owner.add_constraint(name, value)
     elif isinstance(value, _saiopt.Block):
         owner.add_block(name, value)
     else:
@@ -175,6 +176,13 @@ def set_attribute(owner: Any, name: str, value: Any) -> None:
             f"can't declare {name!r} from a value of type {type(value).__name__}{hint}. Assign so.Var, "
             f"so.Vars, a constraint, so.Constraints, a Block, so.Scaled, so.Blocks, or so.PiecewiseLinear"
         )
+
+    # A variable, a constraint, or a group of either: the same value a
+    # first read would cache (see __getattr__ in python/src/blocks.cpp), so
+    # a group's dict isn't built a second time. Child blocks and piecewise
+    # functions are never cached, and their _declare returns None.
+    if declared is not None:
+        owner.__dict__[name] = declared
 
 
 def _given(**kwargs: Any) -> dict:

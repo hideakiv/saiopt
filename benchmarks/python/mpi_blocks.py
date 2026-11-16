@@ -32,11 +32,12 @@ rank, size = comm.Get_rank(), comm.Get_size()
 def region(k):
     b = so.Block()
     arcs = list(itertools.product(range(N), range(N)))
-    x = b.add_vars("x", arcs, bounds=(0, so.inf))
-    b.add_constraints("cap", range(N), lambda i: so.quicksum(x[i, j] for j in range(N)) <= 2.0 * N)
-    b.add_constraints("dem", range(N), lambda j: so.quicksum(x[i, j] for i in range(N)) >= 1)
-    used = b.add_var("used", bounds=(0, so.inf))
-    b.add_constraint("used_def", used == so.quicksum(x.values()))
+    b.x = so.Vars(arcs, bounds=(0, so.inf))
+    x = b.x
+    b.cap = so.Constraints(range(N), lambda i: so.quicksum(x[i, j] for j in range(N)) <= 2.0 * N)
+    b.dem = so.Constraints(range(N), lambda j: so.quicksum(x[i, j] for i in range(N)) >= 1)
+    b.used = so.Var(bounds=(0, so.inf))
+    b.used_def = b.used == so.quicksum(x.values())
     b.set_objective(so.quicksum((1 + (i * 7 + j * 13 + k) % 10) * x[i, j] for i, j in arcs))
     return b
 
@@ -45,19 +46,19 @@ for _ in range(REPS):
     comm.Barrier()
     t0 = MPI.Wtime()
     chunk = so.Block()
-    for k in range(rank, K, size):
-        chunk.add_block(f"region{k}", region(k))
+    chunk.region = so.Blocks(range(rank, K, size), region)
     comm.Barrier()
     t1 = MPI.Wtime()
 
     chunks = saiopt.mpi.gather_blocks(chunk)
     if rank == 0:
         model = so.Model()
-        used = []
-        for r, c in enumerate(chunks):
-            attached = model.add_block(f"rank{r}", c)
-            used += [attached.block(f"region{k}").var("used") for k in range(r, K, size)]
-        model.add_constraint("link", so.quicksum(used) <= 1e9)
+        model.rank = so.Blocks(range(len(chunks)), lambda r: chunks[r])
+        # By full name: a block received from another rank keeps its
+        # children's names, but not the "region" group they were declared in.
+        ranks = model.rank
+        used = [ranks[r].block(f"region[{k}]").used for r in ranks for k in range(r, K, size)]
+        model.link = so.quicksum(used) <= 1e9
         model.set_objective(so.ObjectiveSense.Minimize, 0)
         result = so.create_solver(model, "highs", {"output_flag": True}).solve()
         t2 = MPI.Wtime()

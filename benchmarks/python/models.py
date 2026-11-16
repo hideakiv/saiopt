@@ -44,15 +44,16 @@ def saiopt_flat(K, N):
 
     model = so.Model()
     keys = list(itertools.product(range(K), range(N), range(N)))
-    x = model.add_vars("x", keys, bounds=(0, so.inf))
-    used = model.add_vars("used", range(K), bounds=(0, so.inf))
-    model.add_constraints("cap", itertools.product(range(K), range(N)),
-                          lambda ki: so.quicksum(x[ki[0], ki[1], j] for j in range(N)) <= 2.0 * N)
-    model.add_constraints("dem", itertools.product(range(K), range(N)),
-                          lambda kj: so.quicksum(x[kj[0], i, kj[1]] for i in range(N)) >= 1)
-    model.add_constraints("used_def", range(K),
-                          lambda k: used[k] == so.quicksum(x[k, i, j] for i in range(N) for j in range(N)))
-    model.add_constraint("link", so.quicksum(used.values()) <= 1e9)
+    model.x = so.Vars(keys, bounds=(0, so.inf))
+    model.used = so.Vars(range(K), bounds=(0, so.inf))
+    x, used = model.x, model.used
+    model.cap = so.Constraints(itertools.product(range(K), range(N)),
+                               lambda ki: so.quicksum(x[ki[0], ki[1], j] for j in range(N)) <= 2.0 * N)
+    model.dem = so.Constraints(itertools.product(range(K), range(N)),
+                               lambda kj: so.quicksum(x[kj[0], i, kj[1]] for i in range(N)) >= 1)
+    model.used_def = so.Constraints(range(K),
+                                    lambda k: used[k] == so.quicksum(x[k, i, j] for i in range(N) for j in range(N)))
+    model.link = so.quicksum(used.values()) <= 1e9
     model.set_objective(so.ObjectiveSense.Minimize, so.quicksum(cost(*key) * x[key] for key in keys))
 
     def solve():

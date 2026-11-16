@@ -7,6 +7,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -104,6 +105,9 @@ Block PyBlock::take() {
     Block block = std::move(*owned_);
     owned_.reset();
     consumed_ = true;
+    // Forget the attribute reads cached on this handle (see __getattr__):
+    // like every other call on a consumed handle, they should now fail.
+    if (nb::handle self = nb::find(this); self.is_valid()) nb::getattr(self, "__dict__").attr("clear")();
     return block;
 }
 
@@ -295,7 +299,24 @@ void bind_block_api(nb::class_<Self>& cls) {
                     throw_attribute_error("'" + type + "' object has no attribute '" + name + "'");
                 }
                 auto found = declared_items(self, name);
-                if (found.size() == 1) return std::move(found.front().second);
+                if (found.size() == 1) {
+                    // Nothing in a block is ever removed or renamed, so the
+                    // answer can't change: cache it on this object, where
+                    // Python's own attribute lookup finds it next time
+                    // without calling __getattr__. Without this, every
+                    // read of a group would rebuild its whole dict.
+                    //
+                    // Only variables, constraints, and their groups:
+                    // anything holding a child block's handle refers back
+                    // to the root from C++, where the garbage collector
+                    // can't see the cycle. Those are cheap to rebuild.
+                    std::string_view kind = found.front().first;
+                    if (kind == "variable" || kind == "group of variables" || kind == "constraint" ||
+                        kind == "group of constraints") {
+                        nb::getattr(nb::find(&self), "__dict__")[name.c_str()] = found.front().second;
+                    }
+                    return std::move(found.front().second);
+                }
                 if (found.empty()) {
                     throw_attribute_error("'" + type + "' object has no attribute '" + name +
                                           "', and nothing named '" + name + "' is declared in it");
@@ -462,10 +483,12 @@ void bind_blocks(nb::module_& m) {
                    ")";
         });
 
+    // dynamic_attr: a __dict__, where __getattr__ caches what it looked up.
     nb::class_<PyBlock> block(m, "Block",
                               "A composable sub-model: its own variables, constraints, and objective contribution, "
                               "plus any child blocks. Build one standalone with Block(), then move it into a "
-                              "parent with add_block.");
+                              "parent with add_block.",
+                              nb::dynamic_attr());
     block.def("__init__", [](PyBlock* self) { new (self) PyBlock(PyBlock::owning(Block())); })
         .def(
             "set_objective", [](PyBlock& self, nb::handle expr) { self.get().set_objective(objective_of(expr)); },
@@ -494,7 +517,8 @@ void bind_blocks(nb::module_& m) {
                 "The child block holding the auxiliary variables.");
 
     nb::class_<Model> model(m, "Model",
-                            "The root of a Block tree, plus the objective's sense -- the thing a Solver solves.");
+                            "The root of a Block tree, plus the objective's sense -- the thing a Solver solves.",
+                            nb::dynamic_attr());
     model.def(nb::init<>())
         .def_static(
             "from_block",

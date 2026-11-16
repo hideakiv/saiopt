@@ -177,3 +177,29 @@ def test_dunder_lookups_still_behave():
     with pytest.raises((TypeError, AttributeError, RuntimeError)) as info:
         copy.deepcopy(block)
     assert "nothing named" not in str(info.value)
+
+
+def test_reading_a_group_again_gives_the_same_dict_without_rebuilding_it():
+    # A read is cached on the object, so model.x[i] in a loop doesn't
+    # rebuild the whole group every time.
+    model = so.Model()
+    model.x = so.Vars(range(20000), bounds=(0, 1))
+    assert model.x is model.x
+    model.c = so.Constraints(range(3), lambda i: model.x[i] <= 1)
+    assert model.c is model.c
+    # Child blocks aren't cached (their handles refer back to the root),
+    # but each read still reaches the same block.
+    model.site = so.Block()
+    model.site.y = so.Var()
+    assert model.site.y.is_same(model.site.y)
+
+
+def test_a_block_moved_into_a_parent_cant_be_read_through_its_old_handle():
+    site = so.Block()
+    site.x = so.Var()
+    assert site.x is not None
+    model = so.Model()
+    model.site = site
+    with pytest.raises(RuntimeError, match="moved into another block"):
+        site.x
+    assert model.site.x.is_same(model.block("site").var("x"))
